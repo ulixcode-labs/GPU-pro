@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPU Pro</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+    
+    <!-- External Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Leaflet.js for maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Application Styles -->
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-content">
+                <div class="header-left">
+                    <div class="brand">
+                        <h1>GPU Pro</h1>
+                        <span class="version-badge">Community Edition</span>
+                    </div>
+                    <div class="brand-tagline">Master Your AI Workflow</div>
+                    <div id="connection-status">Connecting...</div>
+                </div>
+                <div class="header-right">
+                    <div class="global-time-range-selector">
+                        <span class="time-range-label">Chart Range:</span>
+                        <div class="time-range-buttons">
+                            <button class="time-range-btn active" data-range="60" onclick="setGlobalTimeRange(60)">1 min</button>
+                            <button class="time-range-btn" data-range="300" onclick="setGlobalTimeRange(300)">5 min</button>
+                            <button class="time-range-btn" data-range="900" onclick="setGlobalTimeRange(900)">15 min</button>
+                        </div>
+                    </div>
+                    <button class="alert-toggle-btn" onclick="toggleAlertPanel()" title="View Alerts">
+                        🔔
+                        <span id="alert-count-badge" class="alert-count-badge hidden">0</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alert Banner -->
+        <div id="alert-banner" class="alert-banner hidden">
+            <div id="alert-banner-content"></div>
+        </div>
+
+        <!-- View Selector -->
+        <div class="view-selector" id="view-selector">
+            <button class="view-option active" data-view="overview" onclick="switchToView('overview')">System Metrics</button>
+        </div>
+
+        <!-- Overview Tab (System Metrics) -->
+        <div id="tab-overview" class="tab-content active">
+            <!-- GPU Overview Grid -->
+            <div id="overview-container" class="overview-grid">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    Loading GPU data...
+                </div>
+            </div>
+
+            <!-- System Metrics Section -->
+            <div class="system-metrics-container">
+                <!-- Network I/O Chart -->
+                <div class="metric-section">
+                    <div class="section-header">
+                        <h2>Network I/O</h2>
+                    </div>
+                    <div class="chart-container" style="height: 300px;">
+                        <canvas id="network-io-chart"></canvas>
+                    </div>
+                    <div class="chart-stats" id="network-stats"></div>
+                </div>
+
+                <!-- Disk I/O Chart -->
+                <div class="metric-section">
+                    <div class="section-header">
+                        <h2>Disk I/O</h2>
+                    </div>
+                    <div class="chart-container" style="height: 300px;">
+                        <canvas id="disk-io-chart"></canvas>
+                    </div>
+                    <div class="chart-stats" id="disk-stats"></div>
+                </div>
+
+                <!-- Network Connections Count Chart -->
+                <div class="metric-section">
+                    <div class="section-header">
+                        <h2>Network Connections History</h2>
+                    </div>
+                    <div class="chart-container" style="height: 300px;">
+                        <canvas id="connections-count-chart"></canvas>
+                    </div>
+                    <div class="chart-stats" id="connection-stats"></div>
+                </div>
+
+                <!-- Open Files Count Chart -->
+                <div class="metric-section">
+                    <div class="section-header">
+                        <h2>Open Files History</h2>
+                    </div>
+                    <div class="chart-container" style="height: 300px;">
+                        <canvas id="open-files-chart"></canvas>
+                    </div>
+                    <div class="chart-stats" id="open-files-stats"></div>
+                </div>
+
+                <!-- Connection World Map -->
+                <div class="metric-section">
+                    <div class="section-header">
+                        <h2>Connection World Map</h2>
+                        <span id="map-connection-count" style="color: var(--text-secondary); font-size: 0.9rem;">0 external IPs</span>
+                    </div>
+                    <div id="connection-map" style="height: 500px; border-radius: 0.5rem; overflow: hidden;"></div>
+                    <div style="margin-top: 1rem; padding: 1rem; background: rgba(255, 255, 255, 0.02); border-radius: 0.5rem; border: 1px solid var(--border-color);">
+                        <div style="display: flex; gap: 2rem; flex-wrap: wrap; align-items: center;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <div style="width: 12px; height: 12px; background: #4facfe; border-radius: 50%;"></div>
+                                <span style="font-size: 0.85rem; color: var(--text-secondary);">External Connections</span>
+                            </div>
+                            <div style="flex: 1; font-size: 0.75rem; color: var(--text-secondary);">
+                                Click markers to see connection details • Data refreshes every 30 seconds
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Network Connections -->
+                <div class="metric-section">
+                    <div class="section-header">
+                        <h2>Network Connections</h2>
+                        <span id="connection-count" style="color: var(--text-secondary); font-size: 0.9rem;"></span>
+                    </div>
+                    <div class="table-container">
+                        <table class="connections-table">
+                            <thead>
+                                <tr>
+                                    <th>Protocol</th>
+                                    <th>Local Address</th>
+                                    <th>Foreign Address</th>
+                                    <th>State</th>
+                                    <th>Duration</th>
+                                    <th>PID</th>
+                                    <th>Program</th>
+                                </tr>
+                            </thead>
+                            <tbody id="connections-tbody">
+                                <tr><td colspan="7" style="text-align: center; padding: 2rem;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Top 10 Largest Files -->
+                <div class="metric-section">
+                    <div class="section-header">
+                        <h2>Top 10 Largest Files <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 400;">(by actual disk usage)</span></h2>
+                        <div class="directory-selector">
+                            <input type="text"
+                                   id="largest-files-directory"
+                                   value=""
+                                   placeholder="Loading home directory..."
+                                   onkeypress="if(event.key === 'Enter') refreshLargestFiles()"
+                                   style="padding: 0.5rem 0.75rem; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: var(--text-primary); font-size: 0.9rem; width: 300px; margin-right: 0.5rem;"
+                            />
+                            <button onclick="refreshLargestFiles()"
+                                    style="padding: 0.5rem 1rem; background: var(--primary-gradient); border: none; border-radius: 8px; color: white; font-weight: 600; cursor: pointer; font-size: 0.9rem;">
+                                🔄 Refresh
+                            </button>
+                        </div>
+                    </div>
+                    <div class="files-list" id="largest-files-list">
+                        <div style="text-align: center; padding: 3rem; color: var(--text-secondary);">
+                            <div style="font-size: 3rem; margin-bottom: 1rem;">📁</div>
+                            <div style="font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem;">Ready to scan</div>
+                            <div style="font-size: 0.85rem; opacity: 0.7;">Enter a directory path and click Refresh to view largest files</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Info - CPU, RAM, Disk, Fans -->
+            <div class="system-info">
+                <div style="margin-bottom: 1rem; padding: 0 1rem;">
+                    <h3 style="color: var(--text-primary); margin: 0; font-size: 1.2rem;">System Metrics</h3>
+                </div>
+                <div class="system-metric">
+                    <canvas class="system-metric-chart" id="cpu-chart"></canvas>
+                    <div class="system-metric-value" id="cpu-usage">0%</div>
+                    <div class="system-metric-label">System CPU</div>
+                    <div class="metric-sublabel">Host Processor</div>
+                </div>
+                <div class="system-metric">
+                    <canvas class="system-metric-chart" id="memory-chart"></canvas>
+                    <div class="system-metric-value" id="memory-usage">0%</div>
+                    <div class="system-metric-label">System RAM</div>
+                    <div class="metric-sublabel">Host Memory</div>
+                </div>
+                <div class="system-metric">
+                    <canvas class="system-metric-chart" id="disk-chart"></canvas>
+                    <div class="system-metric-value" id="disk-usage">0%</div>
+                    <div class="system-metric-label">Disk Usage</div>
+                    <div class="metric-sublabel">Root Partition</div>
+                </div>
+                <div class="system-metric">
+                    <canvas class="system-metric-chart" id="fan-chart"></canvas>
+                    <div class="system-metric-value" id="fan-speed">0 RPM</div>
+                    <div class="system-metric-label">System Fans</div>
+                    <div class="metric-sublabel">Average Speed</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Individual GPU Tabs (dynamically created) -->
+
+        <div class="processes-section">
+            <div class="processes-header" onclick="toggleProcesses()">
+                <div class="processes-title">
+                    Active GPU Processes
+                </div>
+                <div class="processes-toggle">
+                    <span id="process-count">0 processes</span>
+                    <span class="toggle-icon">▼</span>
+                </div>
+            </div>
+            <div class="processes-content" id="processes-content">
+                <div class="processes-inner" id="processes-container">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        Loading processes...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Panel -->
+    <div id="alert-panel" class="alert-panel">
+        <div class="alert-panel-header">
+            <h2>🔔 Alert Center</h2>
+            <button class="alert-panel-close" onclick="closeAlertPanel()">&times;</button>
+        </div>
+
+        <div class="alert-panel-tabs">
+            <button class="alert-tab active" onclick="switchAlertTab('history')">Alert History</button>
+            <button class="alert-tab" onclick="switchAlertTab('config')">Configuration</button>
+        </div>
+
+        <!-- Alert History Tab -->
+        <div id="alert-tab-history" class="alert-tab-content active">
+            <div class="alert-panel-actions">
+                <button class="alert-action-btn-secondary" onclick="acknowledgeAllAlerts()">✓ Acknowledge All</button>
+                <button class="alert-action-btn-secondary" onclick="clearAllAlerts()">🗑 Clear All</button>
+            </div>
+            <div id="alert-history-list" class="alert-history-list">
+                <div class="empty-state">
+                    <div class="empty-state-icon">🎉</div>
+                    <div class="empty-state-text">No alerts recorded</div>
+                    <div class="empty-state-subtext">All systems operating normally</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alert Configuration Tab -->
+        <div id="alert-tab-config" class="alert-tab-content">
+            <div class="alert-config-section">
+                <h3>Temperature Alerts</h3>
+                <div class="threshold-group">
+                    <div class="threshold-item">
+                        <label>
+                            <span class="threshold-label">⚠️ Warning</span>
+                            <input type="range" id="threshold-temp-warning" min="60" max="90" value="75"
+                                   oninput="updateThresholdPreviews()">
+                            <span class="threshold-value" id="preview-temp-warning">75°C</span>
+                        </label>
+                    </div>
+                    <div class="threshold-item">
+                        <label>
+                            <span class="threshold-label">🔴 Critical</span>
+                            <input type="range" id="threshold-temp-critical" min="70" max="100" value="85"
+                                   oninput="updateThresholdPreviews()">
+                            <span class="threshold-value" id="preview-temp-critical">85°C</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="alert-config-section">
+                <h3>Memory Alerts</h3>
+                <div class="threshold-group">
+                    <div class="threshold-item">
+                        <label>
+                            <span class="threshold-label">⚠️ Warning</span>
+                            <input type="range" id="threshold-memory-warning" min="70" max="95" value="85"
+                                   oninput="updateThresholdPreviews()">
+                            <span class="threshold-value" id="preview-memory-warning">85%</span>
+                        </label>
+                    </div>
+                    <div class="threshold-item">
+                        <label>
+                            <span class="threshold-label">🔴 Critical</span>
+                            <input type="range" id="threshold-memory-critical" min="80" max="100" value="95"
+                                   oninput="updateThresholdPreviews()">
+                            <span class="threshold-value" id="preview-memory-critical">95%</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="alert-config-section">
+                <h3>Power Alerts</h3>
+                <div class="threshold-group">
+                    <div class="threshold-item">
+                        <label>
+                            <span class="threshold-label">⚠️ Warning</span>
+                            <input type="range" id="threshold-power-warning" min="70" max="95" value="90"
+                                   oninput="updateThresholdPreviews()">
+                            <span class="threshold-value" id="preview-power-warning">90%</span>
+                        </label>
+                    </div>
+                    <div class="threshold-item">
+                        <label>
+                            <span class="threshold-label">🔴 Critical</span>
+                            <input type="range" id="threshold-power-critical" min="85" max="100" value="98"
+                                   oninput="updateThresholdPreviews()">
+                            <span class="threshold-value" id="preview-power-critical">98%</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="alert-config-actions">
+                <button class="alert-config-btn" onclick="saveAlertConfig()">💾 Save Configuration</button>
+                <button class="alert-config-btn-secondary" onclick="resetThresholds()">🔄 Reset to Defaults</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast-notification" class="toast"></div>
+
+    <!-- Application Scripts -->
+    <!-- Load in order: charts -> gpu-cards -> system-metrics -> ui -> alerts -> socket-handlers -> app -->
+    <script src="/static/js/charts.js"></script>
+    <script src="/static/js/gpu-cards.js"></script>
+    <script src="/static/js/system-metrics.js"></script>
+    <script src="/static/js/ui.js"></script>
+    <script src="/static/js/alerts.js"></script>
+    <script src="/static/js/socket-handlers.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
