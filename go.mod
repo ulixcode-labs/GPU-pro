@@ -9,7 +9,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/gofiber/fiber/v2 v2.51.0
 	github.com/gofiber/websocket/v2 v2.2.1
-	github.com/gorilla/websocket v1.5.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/shirou/gopsutil/v3 v3.23.11
 )
 

@@ -66,6 +66,26 @@ socket.onmessage = function(event) {
     }
 
     const gpuCount = Object.keys(data.gpus).length;
+
+    // Show friendly message if no GPUs detected
+    if (gpuCount === 0 && overviewContainer.children.length === 0) {
+        overviewContainer.innerHTML = `
+            <div class="no-gpu-message" style="padding: 2rem; text-align: center; color: #888;">
+                <h3 style="color: #fa709a; margin-bottom: 1rem;">⚠️ No NVIDIA GPUs detected</h3>
+                <p>NVML is not available or no NVIDIA GPUs are present on this system.</p>
+                <p style="color: #43e97b; margin-top: 0.5rem;">✓ System metrics are still available below</p>
+            </div>
+        `;
+        // Still update system metrics even without GPUs
+        if (data.system) {
+            updateSystemInfo(data.system);
+        }
+        if (data.system_metrics) {
+            updateSystemMetrics(data.system_metrics);
+        }
+        return;
+    }
+
     const now = Date.now();
     
     // Performance: Skip ALL DOM updates during active scrolling

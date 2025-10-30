@@ -156,6 +156,11 @@ func RegisterHandlers(app *fiber.App, mon *monitor.GPUMonitor, cfg *config.Confi
 		}
 		monitorMu.Unlock()
 
+		// Send immediate initial data to clear loading state
+		go func() {
+			sendInitialData(mon, c, cfg)
+		}()
+
 		// Keep connection alive
 		for {
 			if _, _, err := c.ReadMessage(); err != nil {
@@ -166,6 +171,73 @@ func RegisterHandlers(app *fiber.App, mon *monitor.GPUMonitor, cfg *config.Confi
 
 		wsClients.Remove(c)
 	}))
+}
+
+// sendInitialData sends immediate data to a newly connected client to clear loading state
+func sendInitialData(mon *monitor.GPUMonitor, conn *websocket.Conn, cfg *config.Config) {
+	// Collect initial data (will be empty if no GPU)
+	gpuData, _ := mon.GetGPUData()
+	processes, _ := mon.GetProcesses()
+
+	// Ensure we have valid empty structures if nil
+	if gpuData == nil {
+		gpuData = make(map[string]interface{})
+	}
+	if processes == nil {
+		processes = []map[string]interface{}{}
+	}
+
+	// Get system info
+	// Use 500ms interval for CPU to get actual reading (shorter intervals return 0 on macOS)
+	cpuPercent, _ := cpu.Percent(500*time.Millisecond, false)
+	memInfo, _ := mem.VirtualMemory()
+
+	systemInfo := map[string]interface{}{
+		"cpu_percent":    0.0,
+		"memory_percent": 0.0,
+		"disk_percent":   0.0,
+		"timestamp":      time.Now().Format(time.RFC3339),
+	}
+
+	if len(cpuPercent) > 0 {
+		systemInfo["cpu_percent"] = cpuPercent[0]
+	}
+	if memInfo != nil {
+		systemInfo["memory_percent"] = memInfo.UsedPercent
+	}
+
+	// Get disk usage for root partition
+	diskPath := "/"
+	if runtime.GOOS == "windows" {
+		diskPath = "C:\\"
+	}
+	diskUsage, err := disk.Usage(diskPath)
+	if err == nil {
+		systemInfo["disk_percent"] = diskUsage.UsedPercent
+		systemInfo["disk_used"] = float64(diskUsage.Used) / (1024 * 1024 * 1024)
+		systemInfo["disk_total"] = float64(diskUsage.Total) / (1024 * 1024 * 1024)
+	}
+
+	// Build response
+	response := map[string]interface{}{
+		"mode":           cfg.Mode,
+		"node_name":      cfg.NodeName,
+		"gpus":           gpuData,
+		"processes":      processes,
+		"system":         systemInfo,
+		"system_metrics": make(map[string]interface{}), // Empty for initial load
+	}
+
+	// Send to the client
+	data, err := json.Marshal(response)
+	if err != nil {
+		log.Printf("Error marshaling initial response: %v", err)
+		return
+	}
+
+	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+		log.Printf("Error sending initial data: %v", err)
+	}
 }
 
 // monitorLoop is the background loop that collects and emits GPU data
@@ -183,31 +255,24 @@ func monitorLoop(mon *monitor.GPUMonitor, wsClients *WebSocketClients, cfg *conf
 			continue
 		}
 
-		// Collect GPU data and processes only if GPU is initialized
+		// Collect GPU data and processes (will return empty if not initialized)
 		var gpuData map[string]interface{}
 		var processes []map[string]interface{}
 
-		if mon.IsInitialized() {
-			var err error
-			gpuData, err = mon.GetGPUData()
-			if err != nil {
-				log.Printf("Error getting GPU data: %v", err)
-				gpuData = make(map[string]interface{})
-			}
+		gpuData, _ = mon.GetGPUData()
+		processes, _ = mon.GetProcesses()
 
-			processes, err = mon.GetProcesses()
-			if err != nil {
-				log.Printf("Error getting processes: %v", err)
-				processes = []map[string]interface{}{}
-			}
-		} else {
-			// No GPU available, use empty data
+		// Ensure we have valid empty structures if nil
+		if gpuData == nil {
 			gpuData = make(map[string]interface{})
+		}
+		if processes == nil {
 			processes = []map[string]interface{}{}
 		}
 
 		// Get system info
-		cpuPercent, _ := cpu.Percent(0, false)
+		// Use 500ms interval for CPU to get actual reading (shorter intervals return 0 on macOS)
+		cpuPercent, _ := cpu.Percent(500*time.Millisecond, false)
 		memInfo, _ := mem.VirtualMemory()
 
 		systemInfo := map[string]interface{}{

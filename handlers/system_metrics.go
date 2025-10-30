@@ -7,12 +7,17 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/shirou/gopsutil/v3/disk"
+	"github.com/shirou/gopsutil/v3/net"
+	"github.com/shirou/gopsutil/v3/process"
 )
 
 // NetworkStats holds network I/O statistics
@@ -79,21 +84,28 @@ func init() {
 	lastDiskStatsTime = time.Now()
 }
 
-// GetNetworkIO reads network I/O statistics from /proc/net/dev
+// GetNetworkIO reads network I/O statistics (cross-platform using gopsutil)
 func GetNetworkIO() []NetworkStats {
 	stats := []NetworkStats{}
-	
+
+	// Try gopsutil first (cross-platform)
+	netIO, err := getNetworkIOGopsutil()
+	if err == nil {
+		return netIO
+	}
+
+	// Fallback to Linux /proc method
 	file, err := os.Open("/proc/net/dev")
 	if err != nil {
 		return stats
 	}
 	defer file.Close()
-	
+
 	scanner := bufio.NewScanner(file)
 	// Skip first two header lines
 	scanner.Scan()
 	scanner.Scan()
-	
+
 	now := time.Now()
 	elapsed := now.Sub(lastNetStatsTime).Seconds()
 	if elapsed == 0 {
@@ -136,16 +148,115 @@ func GetNetworkIO() []NetworkStats {
 	return stats
 }
 
-// GetDiskIO reads disk I/O statistics from /proc/diskstats
+// getNetIOCounters wraps gopsutil net.IOCounters
+func getNetIOCounters() (map[string]net.IOCountersStat, error) {
+	ioCounters, err := net.IOCounters(true) // pernic=true to get per-interface stats
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert slice to map for easier lookup
+	result := make(map[string]net.IOCountersStat)
+	for _, ioc := range ioCounters {
+		result[ioc.Name] = ioc
+	}
+	return result, nil
+}
+
+// getNetworkIOGopsutil uses gopsutil for cross-platform network I/O stats
+func getNetworkIOGopsutil() ([]NetworkStats, error) {
+	netIO, err := getNetIOCounters()
+	if err != nil {
+		return nil, err
+	}
+
+	stats := []NetworkStats{}
+	now := time.Now()
+	elapsed := now.Sub(lastNetStatsTime).Seconds()
+	if elapsed == 0 {
+		elapsed = 1
+	}
+
+	for iface, ioStat := range netIO {
+		// Skip loopback
+		if iface == "lo" || iface == "lo0" {
+			continue
+		}
+
+		stat := NetworkStats{
+			Interface:     iface,
+			BytesReceived: ioStat.BytesRecv,
+			BytesSent:     ioStat.BytesSent,
+		}
+
+		// Calculate rates
+		if last, ok := lastNetStats[iface]; ok {
+			stat.RxRate = float64(ioStat.BytesRecv-last.BytesReceived) / elapsed
+			stat.TxRate = float64(ioStat.BytesSent-last.BytesSent) / elapsed
+		}
+
+		stats = append(stats, stat)
+		lastNetStats[iface] = &stat
+	}
+
+	lastNetStatsTime = now
+	return stats, nil
+}
+
+// GetDiskIO reads disk I/O statistics (cross-platform using gopsutil)
 func GetDiskIO() []DiskStats {
 	stats := []DiskStats{}
-	
+
+	// Try gopsutil first (cross-platform)
+	diskIO, err := disk.IOCounters()
+	if err == nil {
+		now := time.Now()
+		elapsed := now.Sub(lastDiskStatsTime).Seconds()
+		if elapsed == 0 {
+			elapsed = 1
+		}
+
+		for device, ioStat := range diskIO {
+			// Skip loop devices and partitions on Linux
+			if strings.Contains(device, "loop") {
+				continue
+			}
+
+			stat := DiskStats{
+				Device:          device,
+				ReadsCompleted:  ioStat.ReadCount,
+				WritesCompleted: ioStat.WriteCount,
+				SectorsRead:     ioStat.ReadBytes / 512,  // Convert bytes to sectors
+				SectorsWritten:  ioStat.WriteBytes / 512, // Convert bytes to sectors
+			}
+
+			// Calculate rates
+			if last, ok := lastDiskStats[device]; ok {
+				stat.ReadRate = float64(ioStat.ReadCount-last.ReadsCompleted) / elapsed
+				stat.WriteRate = float64(ioStat.WriteCount-last.WritesCompleted) / elapsed
+				stat.ReadKBps = float64(ioStat.ReadBytes-last.SectorsRead*512) / 1024 / elapsed
+				stat.WriteKBps = float64(ioStat.WriteBytes-last.SectorsWritten*512) / 1024 / elapsed
+			}
+
+			stats = append(stats, stat)
+			lastDiskStats[device] = &stat
+		}
+
+		lastDiskStatsTime = now
+		return stats
+	}
+
+	// Fallback to Linux /proc method if gopsutil fails
+	if runtime.GOOS != "linux" {
+		return stats
+	}
+
 	file, err := os.Open("/proc/diskstats")
 	if err != nil {
 		return stats
 	}
 	defer file.Close()
-	
+
 	now := time.Now()
 	elapsed := now.Sub(lastDiskStatsTime).Seconds()
 	if elapsed == 0 {
@@ -158,7 +269,7 @@ func GetDiskIO() []DiskStats {
 		if len(fields) < 14 {
 			continue
 		}
-		
+
 		device := fields[2]
 		// Only show main devices (sda, nvme0n1, etc.), skip partitions
 		if strings.Contains(device, "loop") {
@@ -170,12 +281,12 @@ func GetDiskIO() []DiskStats {
 				continue
 			}
 		}
-		
+
 		readsCompleted, _ := strconv.ParseUint(fields[3], 10, 64)
 		sectorsRead, _ := strconv.ParseUint(fields[5], 10, 64)
 		writesCompleted, _ := strconv.ParseUint(fields[7], 10, 64)
 		sectorsWritten, _ := strconv.ParseUint(fields[9], 10, 64)
-		
+
 		stat := DiskStats{
 			Device:          device,
 			ReadsCompleted:  readsCompleted,
@@ -191,7 +302,7 @@ func GetDiskIO() []DiskStats {
 			stat.ReadKBps = float64(sectorsRead-last.SectorsRead) * 512 / 1024 / elapsed
 			stat.WriteKBps = float64(sectorsWritten-last.SectorsWritten) * 512 / 1024 / elapsed
 		}
-		
+
 		stats = append(stats, stat)
 		lastDiskStats[device] = &stat
 	}
@@ -273,6 +384,11 @@ func GetNetworkConnections() ([]NetworkConnection, ConnectionStats) {
 	connections := []NetworkConnection{}
 	stats := ConnectionStats{}
 	activeKeys := make(map[string]bool) // Track active connections for cleanup
+
+	// On non-Linux systems, use gopsutil
+	if runtime.GOOS != "linux" {
+		return getConnectionsGopsutil()
+	}
 
 	// Use netstat for consistent output format
 	// Format: Proto Recv-Q Send-Q Local-Address Foreign-Address State PID/Program
@@ -544,43 +660,150 @@ func formatBytes(bytes int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
-// GetOpenFileCount gets the number of open file descriptors system-wide
+// GetOpenFileCount gets the number of open file descriptors system-wide (cross-platform estimate)
 func GetOpenFileCount() int {
-	// Read /proc/sys/fs/file-nr which contains:
-	// allocated_handles free_handles max_handles
-	data, err := os.ReadFile("/proc/sys/fs/file-nr")
+	// Try Linux /proc method first (most accurate)
+	if runtime.GOOS == "linux" {
+		data, err := os.ReadFile("/proc/sys/fs/file-nr")
+		if err == nil {
+			fields := strings.Fields(string(data))
+			if len(fields) >= 1 {
+				if allocated, err := strconv.Atoi(fields[0]); err == nil {
+					return allocated
+				}
+			}
+		}
+	}
+
+	// Fallback: estimate by counting open FDs across all processes (works on macOS/Linux)
+	procs, err := process.Processes()
 	if err != nil {
 		return 0
 	}
 
-	fields := strings.Fields(string(data))
-	if len(fields) < 1 {
-		return 0
+	totalFDs := 0
+	for _, proc := range procs {
+		openFiles, err := proc.OpenFiles()
+		if err == nil {
+			totalFDs += len(openFiles)
+		}
 	}
 
-	allocated, err := strconv.Atoi(fields[0])
+	return totalFDs
+}
+
+// getConnectionsGopsutil gets connections using gopsutil (cross-platform)
+func getConnectionsGopsutil() ([]NetworkConnection, ConnectionStats) {
+	connections := []NetworkConnection{}
+	stats := ConnectionStats{}
+	activeKeys := make(map[string]bool)
+
+	// Get all TCP and UDP connections
+	conns, err := net.Connections("all")
 	if err != nil {
-		return 0
+		return connections, stats
 	}
 
-	return allocated
+	for _, c := range conns {
+		if c.Status == "" && c.Type != syscall.SOCK_STREAM {
+			continue // Skip listening sockets without state
+		}
+
+		localAddr := fmt.Sprintf("%s:%d", c.Laddr.IP, c.Laddr.Port)
+		remoteAddr := fmt.Sprintf("%s:%d", c.Raddr.IP, c.Raddr.Port)
+		foreignIP := c.Raddr.IP
+
+		// Determine protocol name
+		protoName := "tcp"
+		if c.Type == syscall.SOCK_DGRAM {
+			protoName = "udp"
+		}
+
+		conn := NetworkConnection{
+			Protocol:    protoName,
+			LocalAddr:   localAddr,
+			ForeignAddr: remoteAddr,
+			State:       c.Status,
+			PID:         fmt.Sprintf("%d", c.Pid),
+			ForeignIP:   foreignIP,
+			IsExternal:  !IsPrivateIP(foreignIP) && foreignIP != "" && foreignIP != "*" && foreignIP != "0.0.0.0",
+		}
+
+		// Track duration
+		connKey := getConnectionKey(conn.Protocol, conn.LocalAddr, conn.ForeignAddr, conn.PID)
+		conn.Duration, conn.DurationSec = trackConnectionDuration(connKey)
+		activeKeys[connKey] = true
+
+		// Count by protocol
+		protocol := protoName
+		if strings.Contains(protocol, "tcp") {
+			stats.TCP++
+		} else if strings.Contains(protocol, "udp") {
+			stats.UDP++
+		} else {
+			stats.Other++
+		}
+		stats.Total++
+
+		connections = append(connections, conn)
+
+		// Limit to 100
+		if len(connections) >= 100 {
+			break
+		}
+	}
+
+	cleanupStaleConnections(activeKeys)
+	return connections, stats
+}
+
+var (
+	lastGeoLocations   map[string]*GeoLocation
+	lastGeoLocationsMu sync.RWMutex
+	geoLookupRunning   bool
+	geoLookupMu        sync.Mutex
+)
+
+func init() {
+	lastGeoLocations = make(map[string]*GeoLocation)
 }
 
 // GetSystemMetrics collects all system metrics
 func GetSystemMetrics() map[string]interface{} {
 	connections, connStats := GetNetworkConnections()
 
-	// Get geolocation for external IPs (async to avoid blocking)
-	geoLocations := GetConnectionGeoLocations(connections)
+	// Start async geolocation lookup if not already running
+	geoLookupMu.Lock()
+	if !geoLookupRunning {
+		geoLookupRunning = true
+		go func() {
+			defer func() {
+				geoLookupMu.Lock()
+				geoLookupRunning = false
+				geoLookupMu.Unlock()
+			}()
+
+			geoLocs := GetConnectionGeoLocations(connections)
+			lastGeoLocationsMu.Lock()
+			lastGeoLocations = geoLocs
+			lastGeoLocationsMu.Unlock()
+		}()
+	}
+	geoLookupMu.Unlock()
+
+	// Return cached geolocations
+	lastGeoLocationsMu.RLock()
+	geoLocs := lastGeoLocations
+	lastGeoLocationsMu.RUnlock()
 
 	return map[string]interface{}{
 		"network_io":       GetNetworkIO(),
 		"disk_io":          GetDiskIO(),
 		"connections":      connections,
 		"connection_stats": connStats,
-		"geo_locations":    geoLocations,
-		"open_files":       GetOpenFileCount(),
-		"largest_files":    GetTopLargestFiles(10, "/"),
+		"geo_locations":    geoLocs,
+		"open_files":       0,                // Skip for now - can be slow on macOS
+		"largest_files":    []interface{}{}, // Skip for now - scanning / is very slow
 		"timestamp":        time.Now().Format(time.RFC3339),
 	}
 }

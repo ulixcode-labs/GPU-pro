@@ -33,7 +33,7 @@ func NewGPUMonitor() *GPUMonitor {
 
 	// Initialize NVML
 	if ret := nvml.Init(); ret != nvml.SUCCESS {
-		log.Printf("⚠️  No NVIDIA GPU detected or NVML not available: %v", nvml.ErrorString(ret))
+		log.Printf("⚠️  No NVIDIA GPU detected or NVML not available (error code: %v)", ret)
 		log.Printf("✓  System metrics will still be available")
 		monitor.initialized = false
 		return monitor
@@ -107,12 +107,13 @@ func (m *GPUMonitor) detectSMIGPUs() {
 // GetGPUData collects metrics from all detected GPUs
 func (m *GPUMonitor) GetGPUData() (map[string]interface{}, error) {
 	if !m.initialized {
-		return nil, fmt.Errorf("NVML not initialized")
+		// Return empty map instead of error to allow graceful degradation
+		return make(map[string]interface{}), nil
 	}
 
 	count, ret := nvml.DeviceGetCount()
 	if ret != nvml.SUCCESS {
-		return nil, fmt.Errorf("failed to get device count: %v", nvml.ErrorString(ret))
+		return make(map[string]interface{}), nil
 	}
 
 	gpuData := make(map[string]interface{})
@@ -140,12 +141,13 @@ func (m *GPUMonitor) GetGPUData() (map[string]interface{}, error) {
 // GetProcesses gets GPU process information
 func (m *GPUMonitor) GetProcesses() ([]map[string]interface{}, error) {
 	if !m.initialized {
-		return nil, fmt.Errorf("NVML not initialized")
+		// Return empty slice instead of error to allow graceful degradation
+		return []map[string]interface{}{}, nil
 	}
 
 	count, ret := nvml.DeviceGetCount()
 	if ret != nvml.SUCCESS {
-		return nil, fmt.Errorf("failed to get device count: %v", nvml.ErrorString(ret))
+		return []map[string]interface{}{}, nil
 	}
 
 	var allProcesses []map[string]interface{}

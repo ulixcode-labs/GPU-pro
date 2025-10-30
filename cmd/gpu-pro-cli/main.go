@@ -264,29 +264,33 @@ func tickCmd() tea.Cmd {
 
 // fetchData fetches GPU, process, and system data
 func (m model) fetchData() tea.Msg {
-	if m.monitor == nil {
-		return dataMsg{
-			gpus:      []map[string]interface{}{},
-			processes: []map[string]interface{}{},
-			system:    make(map[string]interface{}),
-		}
-	}
-
-	// Get GPU data (returns map[gpuID]data)
-	gpuDataMap, _ := m.monitor.GetGPUData()
-
-	// Convert map to slice for easier iteration
+	// Initialize with empty data structures
 	gpus := []map[string]interface{}{}
-	for _, gpuData := range gpuDataMap {
-		if data, ok := gpuData.(map[string]interface{}); ok {
-			gpus = append(gpus, data)
+	processes := []map[string]interface{}{}
+
+	if m.monitor != nil {
+		// Get GPU data (returns map[gpuID]data, empty if not initialized)
+		gpuDataMap, _ := m.monitor.GetGPUData()
+
+		// Convert map to slice for easier iteration
+		if gpuDataMap != nil {
+			for _, gpuData := range gpuDataMap {
+				if data, ok := gpuData.(map[string]interface{}); ok {
+					gpus = append(gpus, data)
+				}
+			}
+		}
+
+		// Get processes (returns empty slice if not initialized)
+		processes, _ = m.monitor.GetProcesses()
+		if processes == nil {
+			processes = []map[string]interface{}{}
 		}
 	}
-
-	processes, _ := m.monitor.GetProcesses()
 
 	// Get system info
-	cpuPercent, _ := cpu.Percent(0, false)
+	// Use 500ms interval for CPU to get actual reading (shorter intervals return 0 on macOS)
+	cpuPercent, _ := cpu.Percent(500*time.Millisecond, false)
 	memInfo, _ := mem.VirtualMemory()
 	diskUsage, _ := disk.Usage("/")
 
@@ -833,8 +837,17 @@ func (m model) View() string {
 	sections = append(sections, m.renderSystemInfo())
 
 	// GPUs
-	for i, gpu := range m.gpuData {
-		sections = append(sections, m.renderGPU(i, gpu))
+	if len(m.gpuData) == 0 {
+		// Show a friendly message when no GPUs are detected
+		noGPUMsg := lipgloss.NewStyle().
+			Foreground(mutedColor).
+			Italic(true).
+			Render("⚠️  No NVIDIA GPUs detected or NVML not available\n✓  System metrics are still available")
+		sections = append(sections, boxStyle.Render(noGPUMsg))
+	} else {
+		for i, gpu := range m.gpuData {
+			sections = append(sections, m.renderGPU(i, gpu))
+		}
 	}
 
 	// Processes

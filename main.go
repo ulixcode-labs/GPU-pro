@@ -104,12 +104,9 @@ func main() {
 
 		// API endpoint for monitor mode
 		app.Get("/api/gpu-data", func(c *fiber.Ctx) error {
-			gpuData, err := mon.GetGPUData()
-			if err != nil {
-				return c.JSON(fiber.Map{
-					"gpus":      fiber.Map{},
-					"timestamp": "error",
-				})
+			gpuData, _ := mon.GetGPUData()
+			if gpuData == nil {
+				gpuData = make(map[string]interface{})
 			}
 			return c.JSON(fiber.Map{
 				"gpus":      gpuData,
