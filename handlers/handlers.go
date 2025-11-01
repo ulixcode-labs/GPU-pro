@@ -188,8 +188,14 @@ func sendInitialData(mon *monitor.GPUMonitor, conn *websocket.Conn, cfg *config.
 	}
 
 	// Get system info
-	// Use 500ms interval for CPU to get actual reading (shorter intervals return 0 on macOS)
-	cpuPercent, _ := cpu.Percent(500*time.Millisecond, false)
+	// Use 1s interval for CPU to get reliable reading on macOS
+	// First call initializes baseline, subsequent calls return actual values
+	cpuPercent, err := cpu.Percent(1*time.Second, false)
+	if err != nil || len(cpuPercent) == 0 {
+		// Fallback: try again with 500ms
+		cpuPercent, _ = cpu.Percent(500*time.Millisecond, false)
+	}
+
 	memInfo, _ := mem.VirtualMemory()
 
 	systemInfo := map[string]interface{}{
@@ -199,7 +205,7 @@ func sendInitialData(mon *monitor.GPUMonitor, conn *websocket.Conn, cfg *config.
 		"timestamp":      time.Now().Format(time.RFC3339),
 	}
 
-	if len(cpuPercent) > 0 {
+	if len(cpuPercent) > 0 && cpuPercent[0] > 0 {
 		systemInfo["cpu_percent"] = cpuPercent[0]
 	}
 	if memInfo != nil {
@@ -271,8 +277,14 @@ func monitorLoop(mon *monitor.GPUMonitor, wsClients *WebSocketClients, cfg *conf
 		}
 
 		// Get system info
-		// Use 500ms interval for CPU to get actual reading (shorter intervals return 0 on macOS)
-		cpuPercent, _ := cpu.Percent(500*time.Millisecond, false)
+		// Use 1s interval for CPU to get reliable reading on macOS
+		// First call initializes baseline, subsequent calls return actual values
+		cpuPercent, err := cpu.Percent(1*time.Second, false)
+		if err != nil || len(cpuPercent) == 0 {
+			// Fallback: try again with 500ms
+			cpuPercent, _ = cpu.Percent(500*time.Millisecond, false)
+		}
+
 		memInfo, _ := mem.VirtualMemory()
 
 		systemInfo := map[string]interface{}{
@@ -284,7 +296,7 @@ func monitorLoop(mon *monitor.GPUMonitor, wsClients *WebSocketClients, cfg *conf
 			"timestamp":      time.Now().Format(time.RFC3339),
 		}
 
-		if len(cpuPercent) > 0 {
+		if len(cpuPercent) > 0 && cpuPercent[0] > 0 {
 			systemInfo["cpu_percent"] = cpuPercent[0]
 		}
 		if memInfo != nil {

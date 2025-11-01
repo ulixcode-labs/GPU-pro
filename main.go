@@ -181,7 +181,7 @@ func main() {
 		select {
 		case <-done:
 			log.Println("✅ Shutdown complete")
-		case <-time.After(3 * time.Second):
+		case <-time.After(30 * time.Second):
 			log.Println("⚠️  Shutdown timeout - forcing exit")
 		}
 
