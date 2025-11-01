@@ -11,7 +11,7 @@ set -e
 # Configuration
 VERSION="${VERSION:-v2.0.0}"
 GITHUB_REPO="${GITHUB_REPO:-your-username/gpu-pro}"
-BASE_URL="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}"
+BASE_URL="https://github.com/ulixcode-labs/GPU-pro/tree/main/dist"
 
 # For development/testing with local files
 # Uncomment and set to your local dist directory for testing
