@@ -36,15 +36,24 @@ build_binary() {
     local OS=$1
     local ARCH=$2
     local FLAVOR=$3
+    local BUILD_TYPE=$4  # "web" or "cli"
+
     local BINARY_NAME="gpu-pro"
+    local SOURCE_PATH="."
+
+    # Determine source path and binary name based on build type
+    if [ "$BUILD_TYPE" = "cli" ]; then
+        BINARY_NAME="gpu-pro-cli"
+        SOURCE_PATH="./cmd/gpu-pro-cli"
+    fi
 
     # Windows binaries need .exe extension
     if [ "$OS" = "windows" ]; then
-        BINARY_NAME="gpu-pro.exe"
+        BINARY_NAME="${BINARY_NAME}.exe"
     fi
 
     # Output path
-    local OUTPUT_PATH="$OUTPUT_DIR/gpu-pro-${OS}-${ARCH}-${FLAVOR}"
+    local OUTPUT_PATH="$OUTPUT_DIR/${BINARY_NAME%-.*}-${OS}-${ARCH}-${FLAVOR}"
     if [ "$OS" = "windows" ]; then
         OUTPUT_PATH="${OUTPUT_PATH}.exe"
     fi
@@ -68,24 +77,37 @@ build_binary() {
     case "$FLAVOR" in
         release)
             LDFLAGS="-s -w -X main.Version=$VERSION -X main.BuildTime=$BUILD_TIME -X main.GitCommit=$GIT_COMMIT"
+            BUILD_TAGS="$OS"
             ;;
         debug)
             LDFLAGS="-X main.Version=$VERSION-debug -X main.BuildTime=$BUILD_TIME -X main.GitCommit=$GIT_COMMIT"
+            BUILD_TAGS="$OS"
             ;;
         minimal)
             LDFLAGS="-s -w -X main.Version=$VERSION-minimal -X main.BuildTime=$BUILD_TIME -X main.GitCommit=$GIT_COMMIT"
             CGO_ENABLED=0  # Static build, no CGO
-            BUILD_TAGS="nogpu"  # Use nogpu tag for minimal builds
+            # Use nogpu tag for minimal builds on non-darwin platforms
+            # Darwin already has no GPU support, so use darwin tag
+            if [ "$OS" = "darwin" ]; then
+                BUILD_TAGS="$OS"
+            else
+                BUILD_TAGS="nogpu"
+            fi
             ;;
     esac
 
-    echo -e "${YELLOW}Building:${NC} $OS/$ARCH ($FLAVOR)"
+    local TYPE_LABEL=""
+    if [ "$BUILD_TYPE" = "cli" ]; then
+        TYPE_LABEL=" [CLI]"
+    fi
+    echo -e "${YELLOW}Building:${NC} $OS/$ARCH ($FLAVOR)${TYPE_LABEL}"
 
     # Build with platform-specific tags
     GOOS=$OS GOARCH=$ARCH CGO_ENABLED=$CGO_ENABLED go build \
-        -tags="$OS" \
+        -tags="$BUILD_TAGS" \
         -ldflags="$LDFLAGS" \
         -o "$OUTPUT_PATH" \
+        "$SOURCE_PATH" \
         2>&1 | grep -v "^#" || true
 
     if [ -f "$OUTPUT_PATH" ]; then
@@ -186,6 +208,7 @@ echo ""
 echo -e "${BLUE}Building for:${NC}"
 echo -e "  Platforms: ${PLATFORM_ARRAY[*]}"
 echo -e "  Flavors: ${FLAVOR_ARRAY[*]}"
+echo -e "  Types: Web UI + CLI"
 echo ""
 
 # Build matrix
@@ -196,23 +219,10 @@ FAILED_BUILDS=0
 
 for OS in "${PLATFORM_ARRAY[@]}"; do
     for FLAVOR in "${FLAVOR_ARRAY[@]}"; do
-        # Build for amd64
-        ((TOTAL_BUILDS++))
-        if build_binary "$OS" "amd64" "$FLAVOR"; then
-            ((SUCCESSFUL_BUILDS++))
-        else
-            # Check if it was a skip or a failure
-            if [ "$CURRENT_OS" = "darwin" ] && [ "$OS" != "darwin" ]; then
-                ((SKIPPED_BUILDS++))
-            else
-                ((FAILED_BUILDS++))
-            fi
-        fi
-
-        # Build for arm64 (except Windows minimal builds which may have issues)
-        if [ "$OS" != "windows" ] || [ "$FLAVOR" != "minimal" ]; then
+        for BUILD_TYPE in "web" "cli"; do
+            # Build for amd64
             ((TOTAL_BUILDS++))
-            if build_binary "$OS" "arm64" "$FLAVOR"; then
+            if build_binary "$OS" "amd64" "$FLAVOR" "$BUILD_TYPE"; then
                 ((SUCCESSFUL_BUILDS++))
             else
                 # Check if it was a skip or a failure
@@ -222,7 +232,22 @@ for OS in "${PLATFORM_ARRAY[@]}"; do
                     ((FAILED_BUILDS++))
                 fi
             fi
-        fi
+
+            # Build for arm64 (except Windows minimal builds which may have issues)
+            if [ "$OS" != "windows" ] || [ "$FLAVOR" != "minimal" ]; then
+                ((TOTAL_BUILDS++))
+                if build_binary "$OS" "arm64" "$FLAVOR" "$BUILD_TYPE"; then
+                    ((SUCCESSFUL_BUILDS++))
+                else
+                    # Check if it was a skip or a failure
+                    if [ "$CURRENT_OS" = "darwin" ] && [ "$OS" != "darwin" ]; then
+                        ((SKIPPED_BUILDS++))
+                    else
+                        ((FAILED_BUILDS++))
+                    fi
+                fi
+            fi
+        done
     done
 done
 
@@ -248,6 +273,12 @@ echo ""
 echo -e "${GREEN}Done!${NC}"
 echo ""
 echo -e "${BLUE}Usage examples:${NC}"
-echo -e "  Linux:   ./$OUTPUT_DIR/gpu-pro-linux-amd64-release"
-echo -e "  macOS:   ./$OUTPUT_DIR/gpu-pro-darwin-amd64-release"
-echo -e "  Windows: ./$OUTPUT_DIR/gpu-pro-windows-amd64-release.exe"
+echo -e "  Web UI:"
+echo -e "    Linux:   ./$OUTPUT_DIR/gpu-pro-linux-amd64-release"
+echo -e "    macOS:   ./$OUTPUT_DIR/gpu-pro-darwin-amd64-release"
+echo -e "    Windows: ./$OUTPUT_DIR/gpu-pro-windows-amd64-release.exe"
+echo ""
+echo -e "  CLI/TUI:"
+echo -e "    Linux:   ./$OUTPUT_DIR/gpu-pro-cli-linux-amd64-release"
+echo -e "    macOS:   ./$OUTPUT_DIR/gpu-pro-cli-darwin-amd64-release"
+echo -e "    Windows: ./$OUTPUT_DIR/gpu-pro-cli-windows-amd64-release.exe"

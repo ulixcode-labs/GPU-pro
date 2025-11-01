@@ -141,12 +141,61 @@ ask_mode() {
     echo ""
 }
 
+# Ask which flavor to use
+ask_flavor() {
+    print_step "Select Build Flavor"
+    echo ""
+    echo "  1) Release   - Optimized production build (recommended)"
+    echo "                 Smaller size, faster performance"
+    echo ""
+    echo "  2) Debug     - Debug build with symbols"
+    echo "                 Larger size, useful for troubleshooting"
+    echo ""
+    echo "  3) Minimal   - Minimal static build"
+    echo "                 Smallest size, no GPU support"
+    echo ""
+
+    while true; do
+        echo -n "Enter choice [1, 2, 3, or q to quit] (default: 1): "
+        read FLAVOR_CHOICE
+        FLAVOR_CHOICE=${FLAVOR_CHOICE:-1}
+
+        case "$FLAVOR_CHOICE" in
+            1)
+                FLAVOR="release"
+                print_info "Selected: Release build"
+                break
+                ;;
+            2)
+                FLAVOR="debug"
+                print_info "Selected: Debug build"
+                break
+                ;;
+            3)
+                FLAVOR="minimal"
+                print_info "Selected: Minimal build"
+                break
+                ;;
+            q|Q|quit|QUIT)
+                echo ""
+                print_info "Installation cancelled. Goodbye!"
+                echo ""
+                exit 0
+                ;;
+            *)
+                print_error "Invalid choice. Please enter 1, 2, 3, or q."
+                ;;
+        esac
+    done
+    echo ""
+}
+
 # Construct binary name
 get_binary_name() {
     if [ "$OS" = "windows" ]; then
-        BINARY_NAME="gpu-pro${BINARY_TYPE}-${OS}-${ARCH}.exe"
+        BINARY_NAME="gpu-pro${BINARY_TYPE}-${OS}-${ARCH}-${FLAVOR}.exe"
     else
-        BINARY_NAME="gpu-pro${BINARY_TYPE}-${OS}-${ARCH}"
+        BINARY_NAME="gpu-pro${BINARY_TYPE}-${OS}-${ARCH}-${FLAVOR}"
     fi
     LOCAL_BINARY="gpu-pro${BINARY_TYPE}"
 }
@@ -441,6 +490,7 @@ main() {
 
     # Ask user preferences
     ask_mode
+    ask_flavor
 
     # Get binary name
     get_binary_name
