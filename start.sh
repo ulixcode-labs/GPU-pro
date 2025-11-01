@@ -5,40 +5,31 @@
 
 set -e
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-YELLOW='\033[1;33m'
-BOLD='\033[1m'
-NC='\033[0m' # No Color
-
 # Banner
 print_banner() {
-    echo -e "${CYAN}"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "=================================================="
     echo "           GPU Pro - Quick Start"
     echo "        Master Your AI Workflow"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo -e "${NC}"
+    echo "=================================================="
+    echo ""
 }
 
-# Print colored messages
+# Print messages
 info() {
-    echo -e "${BLUE}ℹ ${NC}$1"
+    echo "[INFO] $1"
 }
 
 success() {
-    echo -e "${GREEN}✓ ${NC}$1"
+    echo "[SUCCESS] $1"
 }
 
 error() {
-    echo -e "${RED}✗ ${NC}$1"
+    echo "[ERROR] $1"
 }
 
 warning() {
-    echo -e "${YELLOW}⚠ ${NC}$1"
+    echo "[WARNING] $1"
 }
 
 # Check if Go is installed
@@ -58,7 +49,7 @@ check_go() {
 build_webui() {
     info "Building Web UI version..."
     if go build -ldflags="-s -w" -o gpu-pro; then
-        success "Web UI build successful: ${BOLD}gpu-pro${NC}"
+        success "Web UI build successful: gpu-pro"
         return 0
     else
         error "Web UI build failed"
@@ -70,7 +61,7 @@ build_webui() {
 build_tui() {
     info "Building Terminal UI version..."
     if go build -ldflags="-s -w" -o gpu-pro-cli ./cmd/gpu-pro-cli; then
-        success "Terminal UI build successful: ${BOLD}gpu-pro-cli${NC}"
+        success "Terminal UI build successful: gpu-pro-cli"
         return 0
     else
         error "Terminal UI build failed"
@@ -97,11 +88,11 @@ run_webui() {
     echo ""
     info "Starting GPU Pro Web UI..."
     echo ""
-    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BOLD}  🌐 Web Dashboard: ${CYAN}http://localhost:1312${NC}"
-    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo "=================================================="
+    echo "  Web Dashboard: http://localhost:8889"
+    echo "=================================================="
     echo ""
-    info "Press ${BOLD}Ctrl+C${NC} to stop the server"
+    info "Press Ctrl+C to stop the server"
     echo ""
 
     ./gpu-pro
@@ -119,15 +110,15 @@ run_tui() {
 # Show menu
 show_menu() {
     echo ""
-    echo -e "${BOLD}Choose an option:${NC}"
+    echo "Choose an option:"
     echo ""
-    echo -e "  ${GREEN}1${NC}) 🌐 Web UI      - Beautiful web dashboard (http://localhost:1312)"
-    echo -e "  ${GREEN}2${NC}) 💻 Terminal UI - Elegant TUI for SSH/terminal sessions"
-    echo -e "  ${GREEN}3${NC}) 🔨 Build both  - Just build, don't run"
-    echo -e "  ${GREEN}4${NC}) 🧹 Clean       - Remove built binaries"
-    echo -e "  ${GREEN}q${NC}) ❌ Quit"
+    echo "  1) Web UI      - Beautiful web dashboard (http://localhost:8889)"
+    echo "  2) Terminal UI - Elegant TUI for SSH/terminal sessions"
+    echo "  3) Build both  - Just build, don't run"
+    echo "  4) Clean       - Remove built binaries"
+    echo "  q) Quit"
     echo ""
-    echo -n -e "${CYAN}Enter your choice [1-4/q]: ${NC}"
+    echo -n "Enter your choice [1-4/q]: "
 }
 
 # Clean binaries
@@ -173,6 +164,11 @@ main() {
         exit 0
     elif [ "$1" = "clean" ] || [ "$1" = "4" ]; then
         clean_binaries
+        exit 0
+    elif [ "$1" = "quit" ] || [ "$1" = "q" ] || [ "$1" = "Q" ]; then
+        echo ""
+        info "Goodbye!"
+        echo ""
         exit 0
     fi
 
@@ -227,7 +223,7 @@ main() {
                 ;;
             q|Q)
                 echo ""
-                info "Goodbye! 👋"
+                info "Goodbye!"
                 echo ""
                 exit 0
                 ;;
@@ -240,7 +236,7 @@ main() {
 }
 
 # Handle Ctrl+C gracefully
-trap 'echo -e "\n${YELLOW}⚠ Interrupted${NC}\n"; exit 130' INT
+trap 'echo ""; echo "[WARNING] Interrupted"; echo ""; exit 130' INT
 
 # Run main function
 main "$@"

@@ -59,3 +59,6 @@ __debug_bin
 # Coverage
 coverage.html
 coverage.out
+
+# Cloudflare Dashboard (contains sensitive configuration)
+cloudflare-dashboard/

@@ -51,6 +51,13 @@ build_binary() {
     local BUILD_TAGS=""
     local CGO_ENABLED=1
 
+    # macOS builds don't need CGO (no GPU support)
+    # Windows/Linux need CGO for NVML
+    if [ "$OS" = "darwin" ]; then
+        CGO_ENABLED=0
+        echo -e "${BLUE}  Note: macOS build without GPU support (CGO disabled)${NC}"
+    fi
+
     case "$FLAVOR" in
         release)
             LDFLAGS="-s -w -X main.Version=$VERSION -X main.BuildTime=$BUILD_TIME -X main.GitCommit=$GIT_COMMIT"
@@ -66,8 +73,9 @@ build_binary() {
 
     echo -e "${YELLOW}Building:${NC} $OS/$ARCH ($FLAVOR)"
 
-    # Build
+    # Build with platform-specific tags
     GOOS=$OS GOARCH=$ARCH CGO_ENABLED=$CGO_ENABLED go build \
+        -tags="$OS" \
         -ldflags="$LDFLAGS" \
         -o "$OUTPUT_PATH" \
         2>&1 | grep -v "^#" || true

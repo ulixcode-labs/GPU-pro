@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"gpu-pro/analytics"
+
 	"github.com/gorilla/websocket"
 )
 
@@ -21,21 +23,23 @@ type NodeInfo struct {
 
 // Hub aggregates GPU data from multiple nodes
 type Hub struct {
-	nodeURLs   []string
-	nodes      map[string]*NodeInfo
-	urlToNode  map[string]string
-	running    bool
-	mu         sync.RWMutex
-	connMu     sync.Mutex
-	connStarted bool
+	nodeURLs        []string
+	nodes           map[string]*NodeInfo
+	urlToNode       map[string]string
+	running         bool
+	mu              sync.RWMutex
+	connMu          sync.Mutex
+	connStarted     bool
+	heartbeatClient *analytics.HeartbeatClient
 }
 
 // NewHub creates a new hub instance
 func NewHub(nodeURLs []string) *Hub {
 	hub := &Hub{
-		nodeURLs:  nodeURLs,
-		nodes:     make(map[string]*NodeInfo),
-		urlToNode: make(map[string]string),
+		nodeURLs:        nodeURLs,
+		nodes:           make(map[string]*NodeInfo),
+		urlToNode:       make(map[string]string),
+		heartbeatClient: analytics.NewHeartbeatClient("v2.0-hub", "webui"), // GPU Pro hub version, WebUI mode
 	}
 
 	// Initialize nodes as offline
@@ -48,6 +52,9 @@ func NewHub(nodeURLs []string) *Hub {
 		}
 		hub.urlToNode[url] = url
 	}
+
+	// Start analytics heartbeat
+	hub.heartbeatClient.Start()
 
 	return hub
 }
@@ -273,6 +280,11 @@ func (h *Hub) GetClusterData() map[string]interface{} {
 // Shutdown disconnects from all nodes
 func (h *Hub) Shutdown() {
 	h.running = false
+
+	// Stop heartbeat client
+	if h.heartbeatClient != nil {
+		h.heartbeatClient.Stop()
+	}
 
 	h.mu.RLock()
 	defer h.mu.RUnlock()
