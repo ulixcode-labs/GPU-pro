@@ -106,7 +106,7 @@ func (hb *HeartbeatClient) Stop() {
 		hb.ticker.Stop()
 	}
 	close(hb.stopChan)
-	log.Println("📡 Analytics heartbeat stopped")
+	//log.Println("📡 Analytics heartbeat stopped")
 }
 
 // SetGPUInfo updates GPU information

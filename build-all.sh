@@ -20,6 +20,9 @@ GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 OUTPUT_DIR="dist"
 mkdir -p "$OUTPUT_DIR"
 
+# Detect current platform
+CURRENT_OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+
 echo -e "${BLUE}═══════════════════════════════════════════════════${NC}"
 echo -e "${BLUE}   GPU Pro - Multi-Platform Build Script${NC}"
 echo -e "${BLUE}═══════════════════════════════════════════════════${NC}"
@@ -52,10 +55,14 @@ build_binary() {
     local CGO_ENABLED=1
 
     # macOS builds don't need CGO (no GPU support)
-    # Windows/Linux need CGO for NVML
+    # For cross-compilation from macOS, skip non-macOS builds with CGO
     if [ "$OS" = "darwin" ]; then
         CGO_ENABLED=0
         echo -e "${BLUE}  Note: macOS build without GPU support (CGO disabled)${NC}"
+    elif [ "$CURRENT_OS" = "darwin" ] && [ "$OS" != "darwin" ]; then
+        # Cross-compiling from macOS to Linux/Windows requires CGO but lacks proper toolchain
+        echo -e "${YELLOW}  Note: Skipping $OS build (cross-compilation from macOS not supported for CGO builds)${NC}"
+        return 1
     fi
 
     case "$FLAVOR" in
@@ -68,6 +75,7 @@ build_binary() {
         minimal)
             LDFLAGS="-s -w -X main.Version=$VERSION-minimal -X main.BuildTime=$BUILD_TIME -X main.GitCommit=$GIT_COMMIT"
             CGO_ENABLED=0  # Static build, no CGO
+            BUILD_TAGS="nogpu"  # Use nogpu tag for minimal builds
             ;;
     esac
 
@@ -183,17 +191,37 @@ echo ""
 # Build matrix
 TOTAL_BUILDS=0
 SUCCESSFUL_BUILDS=0
+SKIPPED_BUILDS=0
+FAILED_BUILDS=0
 
 for OS in "${PLATFORM_ARRAY[@]}"; do
     for FLAVOR in "${FLAVOR_ARRAY[@]}"; do
         # Build for amd64
         ((TOTAL_BUILDS++))
-        build_binary "$OS" "amd64" "$FLAVOR" && ((SUCCESSFUL_BUILDS++)) || true
+        if build_binary "$OS" "amd64" "$FLAVOR"; then
+            ((SUCCESSFUL_BUILDS++))
+        else
+            # Check if it was a skip or a failure
+            if [ "$CURRENT_OS" = "darwin" ] && [ "$OS" != "darwin" ]; then
+                ((SKIPPED_BUILDS++))
+            else
+                ((FAILED_BUILDS++))
+            fi
+        fi
 
         # Build for arm64 (except Windows minimal builds which may have issues)
         if [ "$OS" != "windows" ] || [ "$FLAVOR" != "minimal" ]; then
             ((TOTAL_BUILDS++))
-            build_binary "$OS" "arm64" "$FLAVOR" && ((SUCCESSFUL_BUILDS++)) || true
+            if build_binary "$OS" "arm64" "$FLAVOR"; then
+                ((SUCCESSFUL_BUILDS++))
+            else
+                # Check if it was a skip or a failure
+                if [ "$CURRENT_OS" = "darwin" ] && [ "$OS" != "darwin" ]; then
+                    ((SKIPPED_BUILDS++))
+                else
+                    ((FAILED_BUILDS++))
+                fi
+            fi
         fi
     done
 done
@@ -204,14 +232,17 @@ echo -e "${GREEN}Build Summary${NC}"
 echo -e "${BLUE}═══════════════════════════════════════════════════${NC}"
 echo -e "Total builds: $TOTAL_BUILDS"
 echo -e "Successful: ${GREEN}$SUCCESSFUL_BUILDS${NC}"
-if [ $SUCCESSFUL_BUILDS -lt $TOTAL_BUILDS ]; then
-    echo -e "Failed: ${RED}$((TOTAL_BUILDS - SUCCESSFUL_BUILDS))${NC}"
+if [ $SKIPPED_BUILDS -gt 0 ]; then
+    echo -e "Skipped: ${YELLOW}$SKIPPED_BUILDS${NC} (cross-compilation not available)"
+fi
+if [ $FAILED_BUILDS -gt 0 ]; then
+    echo -e "Failed: ${RED}$FAILED_BUILDS${NC}"
 fi
 echo ""
 
 # List all generated binaries
 echo -e "${BLUE}Generated binaries in ${OUTPUT_DIR}/:${NC}"
-ls -lh "$OUTPUT_DIR"/ | grep gpu-pro | awk '{printf "  %s %s %s\n", $9, "("$5")"}'
+ls -lh "$OUTPUT_DIR"/ | grep gpu-pro | awk '{printf "  %s (%s)\n", $9, $5}'
 echo ""
 
 echo -e "${GREEN}Done!${NC}"
