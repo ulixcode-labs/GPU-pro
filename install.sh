@@ -10,12 +10,17 @@ set -e
 
 # Configuration
 VERSION="${VERSION:-v2.0.0}"
-GITHUB_REPO="${GITHUB_REPO:-your-username/gpu-pro}"
-BASE_URL="https://github.com/ulixcode-labs/GPU-pro/tree/main/dist"
+GITHUB_REPO="${GITHUB_REPO:-ulixcode-labs/GPU-pro}"
+# For GitHub releases, use: https://github.com/${GITHUB_REPO}/releases/download/${VERSION}
+# For raw files from main branch:
+BASE_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/main/dist"
 
 # For development/testing with local files
 # Uncomment and set to your local dist directory for testing
 # LOCAL_DIST="/Users/xingwang/Projects/GPU_pro/golang-all-in-one/dist"
+
+# Always use release flavor
+FLAVOR="release"
 
 echo "================================================================"
 echo "                    GPU Pro - Launcher"
@@ -141,54 +146,7 @@ ask_mode() {
     echo ""
 }
 
-# Ask which flavor to use
-ask_flavor() {
-    print_step "Select Build Flavor"
-    echo ""
-    echo "  1) Release   - Optimized production build (recommended)"
-    echo "                 Smaller size, faster performance"
-    echo ""
-    echo "  2) Debug     - Debug build with symbols"
-    echo "                 Larger size, useful for troubleshooting"
-    echo ""
-    echo "  3) Minimal   - Minimal static build"
-    echo "                 Smallest size, no GPU support"
-    echo ""
-
-    while true; do
-        echo -n "Enter choice [1, 2, 3, or q to quit] (default: 1): "
-        read FLAVOR_CHOICE
-        FLAVOR_CHOICE=${FLAVOR_CHOICE:-1}
-
-        case "$FLAVOR_CHOICE" in
-            1)
-                FLAVOR="release"
-                print_info "Selected: Release build"
-                break
-                ;;
-            2)
-                FLAVOR="debug"
-                print_info "Selected: Debug build"
-                break
-                ;;
-            3)
-                FLAVOR="minimal"
-                print_info "Selected: Minimal build"
-                break
-                ;;
-            q|Q|quit|QUIT)
-                echo ""
-                print_info "Installation cancelled. Goodbye!"
-                echo ""
-                exit 0
-                ;;
-            *)
-                print_error "Invalid choice. Please enter 1, 2, 3, or q."
-                ;;
-        esac
-    done
-    echo ""
-}
+# Flavor is always release (configured at the top of the script)
 
 # Construct binary name
 get_binary_name() {
@@ -412,6 +370,32 @@ run_binary() {
         echo "  Press Ctrl+C to interrupt"
         echo ""
         echo "============================================================="
+        echo ""
+
+        # Start the binary in the background
+        "$BINARY_PATH" &
+        BINARY_PID=$!
+
+        # Wait a moment for the server to start
+        sleep 3
+
+        # Auto-open browser
+        print_info "Opening browser..."
+        if command -v open &> /dev/null; then
+            # macOS
+            open http://localhost:8889
+        elif command -v xdg-open &> /dev/null; then
+            # Linux
+            xdg-open http://localhost:8889
+        elif command -v start &> /dev/null; then
+            # Windows
+            start http://localhost:8889
+        else
+            print_warning "Could not auto-open browser. Please open http://localhost:8889 manually."
+        fi
+
+        # Wait for the binary process
+        wait $BINARY_PID
     else
         echo "============================================================="
         echo "  GPU Pro CLI/TUI"
@@ -420,11 +404,11 @@ run_binary() {
         echo "  Press Ctrl+C to exit"
         echo ""
         echo "============================================================="
-    fi
-    echo ""
+        echo ""
 
-    # Run the binary
-    exec "$BINARY_PATH"
+        # Run the binary directly for CLI mode
+        exec "$BINARY_PATH"
+    fi
 }
 
 # Clean up temporary files (not needed anymore as we keep binary in current dir)
@@ -490,9 +474,8 @@ main() {
 
     # Ask user preferences
     ask_mode
-    ask_flavor
 
-    # Get binary name
+    # Get binary name (flavor is already set to "release" at the top)
     get_binary_name
 
     # Download binary to current directory

@@ -6,6 +6,8 @@
 # Dependency directories
 vendor/
 
+gpu-pro
+
 
 # GPU Pro specific
 gpu-alerts.log
