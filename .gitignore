@@ -3,37 +3,9 @@
 # Archived documentation
 .archive-docs/
 
-# Binaries
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-
-# Test binaries
-*.test
-
-# Output of go coverage tool
-*.out
-
-# Go workspace file
-go.work
-
 # Dependency directories
 vendor/
 
-# IDE and editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
-
-# Log files
-*.log
-!.gitkeep
 
 # GPU Pro specific
 gpu-alerts.log

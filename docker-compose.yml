@@ -1,0 +1,23 @@
+services:
+  builder:
+    build:
+      context: .
+      dockerfile: Dockerfile.builder
+    image: gpu-pro-builder:latest
+    container_name: gpu-pro-builder
+    volumes:
+      # Mount source code
+      - .:/workspace
+      # Mount Go module cache for faster builds
+      - go-mod-cache:/go/pkg/mod
+      # Mount Go build cache
+      - go-build-cache:/root/.cache/go-build
+    working_dir: /workspace
+    environment:
+      - VERSION=${VERSION:-2.0.0}
+      - CGO_ENABLED=1
+    command: /usr/local/bin/build
+
+volumes:
+  go-mod-cache:
+  go-build-cache:
