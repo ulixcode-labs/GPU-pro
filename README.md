@@ -72,19 +72,15 @@ GPU Pro is the **modern solution** for NVIDIA GPU monitoring, designed for AI en
 > Stunning real-time GPU monitoring with modern design
 
 <video src="https://youtu.be/vwBC54nXOPI" autoplay loop muted playsinline></video>
-
-
-
 https://youtu.be/vwBC54nXOPI
+
+![til](./gpu-pro-webui-2.gif)
+
 
 ### Terminal UI
 > Elegant TUI for SSH and headless servers
 
-<video src="https://github.com/ulixcode-labs/GPU-pro/gpu-pro-TUI.webm" autoplay loop muted playsinline></video>
-
-[![IMAGE ALT TEXT HERE]](https://youtu.be/vwBC54nXOPI)
-
-[![IMAGE ALT TEXT](http://img.youtube.com/vi/vwBC54nXOPI/0.jpg)](http://www.youtube.com/watch?v=vwBC54nXOPI "Video Title")
+![til](./gpu-pro-TUI.gif)
 
 ### Network Monitoring
 > Live connection tracking with global geolocation
