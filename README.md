@@ -73,7 +73,6 @@ GPU Pro is the **modern solution** for NVIDIA GPU monitoring, designed for AI en
 
 <video src="https://youtu.be/vwBC54nXOPI" autoplay loop muted playsinline></video>
 
-[![IMAGE ALT TEXT HERE]](https://youtu.be/vwBC54nXOPI)
 
 
 https://youtu.be/vwBC54nXOPI
@@ -83,6 +82,9 @@ https://youtu.be/vwBC54nXOPI
 
 <video src="https://github.com/ulixcode-labs/GPU-pro/gpu-pro-TUI.webm" autoplay loop muted playsinline></video>
 
+[![IMAGE ALT TEXT HERE]](https://youtu.be/vwBC54nXOPI)
+
+[![IMAGE ALT TEXT](http://img.youtube.com/vi/vwBC54nXOPI/0.jpg)](http://www.youtube.com/watch?v=vwBC54nXOPI "Video Title")
 
 ### Network Monitoring
 > Live connection tracking with global geolocation
