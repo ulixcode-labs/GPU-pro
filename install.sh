@@ -19,8 +19,8 @@ BASE_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/main/dist"
 # Uncomment and set to your local dist directory for testing
 # LOCAL_DIST="/Users/xingwang/Projects/GPU_pro/golang-all-in-one/dist"
 
-# Always use release flavor
-FLAVOR="release"
+# No flavor suffix - we only have production binaries now
+FLAVOR=""
 
 echo "================================================================"
 echo "                    GPU Pro - Launcher"
@@ -146,14 +146,12 @@ ask_mode() {
     echo ""
 }
 
-# Flavor is always release (configured at the top of the script)
-
-# Construct binary name
+# Construct binary name (no flavor suffix - we only have production binaries)
 get_binary_name() {
     if [ "$OS" = "windows" ]; then
-        BINARY_NAME="gpu-pro${BINARY_TYPE}-${OS}-${ARCH}-${FLAVOR}.exe"
+        BINARY_NAME="gpu-pro${BINARY_TYPE}-${OS}-${ARCH}.exe"
     else
-        BINARY_NAME="gpu-pro${BINARY_TYPE}-${OS}-${ARCH}-${FLAVOR}"
+        BINARY_NAME="gpu-pro${BINARY_TYPE}-${OS}-${ARCH}"
     fi
     LOCAL_BINARY="gpu-pro${BINARY_TYPE}"
 }
@@ -475,7 +473,7 @@ main() {
     # Ask user preferences
     ask_mode
 
-    # Get binary name (flavor is already set to "release" at the top)
+    # Get binary name (production binaries only, no flavor variants)
     get_binary_name
 
     # Download binary to current directory
