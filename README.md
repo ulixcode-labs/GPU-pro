@@ -71,12 +71,13 @@ GPU Pro is the **modern solution** for NVIDIA GPU monitoring, designed for AI en
 ### Web UI Dashboard
 > Stunning real-time GPU monitoring with modern design
 
-![GPU Pro Web UI](docs/images/webui-dashboard.png)
+<video src="https://github.com/ulixcode-labs/GPU-pro/gpu-pro-webui.webm" autoplay loop muted playsinline></video>
 
 ### Terminal UI
 > Elegant TUI for SSH and headless servers
 
-![GPU Pro TUI](docs/images/tui-interface.png)
+<video src="https://github.com/ulixcode-labs/GPU-pro/gpu-pro-TUI.webm" autoplay loop muted playsinline></video>
+
 
 ### Network Monitoring
 > Live connection tracking with global geolocation
@@ -90,12 +91,7 @@ GPU Pro is the **modern solution** for NVIDIA GPU monitoring, designed for AI en
 **The fastest way to get started:**
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/gpu-pro.git
-cd gpu-pro
-
-# Try it now! (Auto-builds and lets you choose Web UI or TUI)
-./start.sh
+wget  https://raw.githubusercontent.com/ulixcode-labs/GPU-pro/refs/heads/main/install.sh && bash install.sh
 ```
 
 That's it! The script will build the project and let you choose between Web UI or Terminal UI.
@@ -197,94 +193,14 @@ All configuration is done via environment variables:
 | `NODE_NAME` | hostname | Node identifier |
 | `NODE_URLS` | empty | Comma-separated node URLs (hub mode) |
 
----
-
-## 🚢 Deployment
-
-### Systemd Service
-
-```bash
-# Copy binary
-sudo cp gpu-pro /usr/local/bin/
-
-# Create service file
-sudo tee /etc/systemd/system/gpu-pro.service << EOF
-[Unit]
-Description=GPU Pro - Professional GPU Monitoring
-After=network.target
-
-[Service]
-Type=simple
-User=root
-ExecStart=/usr/local/bin/gpu-pro
-Restart=always
-RestartSec=10
-Environment="PORT=1312"
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Enable and start
-sudo systemctl daemon-reload
-sudo systemctl enable gpu-pro
-sudo systemctl start gpu-pro
-```
-
-### Docker Deployment
-
-```dockerfile
-FROM nvidia/cuda:12.0-base-ubuntu22.04
-COPY gpu-pro /usr/local/bin/
-EXPOSE 1312
-CMD ["/usr/local/bin/gpu-pro"]
-```
-
-```bash
-docker build -t gpu-pro .
-docker run --gpus all -p 1312:1312 gpu-pro
-```
-
----
 
 ## 🏗️ Building from Source
 
 ### Standard Build
 ```bash
-go build -o gpu-pro
+make build-all-docker
 ```
 
-### Optimized Release Build
-```bash
-# Smaller binary with stripped symbols
-go build -ldflags="-s -w" -o gpu-pro
-
-# Further compress with UPX (optional)
-upx --best --lzma gpu-pro
-```
-
-### Cross-Platform Build
-```bash
-# Linux
-GOOS=linux GOARCH=amd64 go build -o gpu-pro-linux
-
-# Windows
-GOOS=windows GOARCH=amd64 go build -o gpu-pro.exe
-
-# macOS (Intel)
-GOOS=darwin GOARCH=amd64 go build -o gpu-pro-darwin-amd64
-
-# macOS (Apple Silicon)
-GOOS=darwin GOARCH=arm64 go build -o gpu-pro-darwin-arm64
-```
-
-### Build All Platforms
-```bash
-# Use the automated build script
-./build-all.sh
-```
-
----
 
 ## 🎯 Use Cases
 
@@ -298,64 +214,6 @@ GOOS=darwin GOARCH=arm64 go build -o gpu-pro-darwin-arm64
 
 ---
 
-## 🔧 Troubleshooting
-
-### "NVML not initialized"
-```bash
-# Check NVIDIA drivers
-nvidia-smi
-
-# Try with sudo (for permissions)
-sudo ./gpu-pro
-
-# Force nvidia-smi fallback mode
-NVIDIA_SMI=true ./gpu-pro
-```
-
-### Cannot access Web UI from another machine
-```bash
-# Ensure binding to all interfaces
-HOST=0.0.0.0 ./gpu-pro
-
-# Check firewall
-sudo ufw allow 1312
-```
-
-### WebSocket connection failed
-- Check browser console for errors
-- Verify the server is running: `curl http://localhost:1312`
-- Try a different browser
-
----
-
-## 🏛️ Architecture
-
-```
-gpu-pro/
-├── main.go                    # Entry point & server setup
-├── cmd/
-│   └── gpu-pro-cli/          # Terminal UI application
-├── config/
-│   └── config.go             # Configuration management
-├── monitor/
-│   ├── monitor.go            # GPU monitoring core
-│   └── metrics.go            # Metrics collection
-├── handlers/
-│   ├── handlers.go           # WebSocket & HTTP handlers
-│   ├── system_metrics.go     # System monitoring
-│   ├── geoip.go              # Geolocation services
-│   └── fan_speed.go          # Fan monitoring
-├── hub/
-│   ├── hub.go               # Multi-node aggregation
-│   └── handlers.go          # Hub WebSocket handlers
-├── static/                   # Web UI assets (embedded)
-│   ├── css/styles.css       # Modern UI styling
-│   └── js/*.js              # Frontend logic
-└── templates/
-    └── index.html           # Dashboard template
-```
-
----
 
 ## 🤝 Contributing
 
@@ -384,36 +242,3 @@ MIT License - see [LICENSE](LICENSE) file for details
 - **Chart.js** for stunning data visualizations
 
 ---
-
-## 📞 Support
-
-- 📖 **Documentation**: Check the [docs](docs/) folder
-- 💬 **Issues**: [GitHub Issues](https://github.com/yourusername/gpu-pro/issues)
-- 🌟 **Star us**: If you find GPU Pro helpful!
-
----
-
-<div align="center">
-
-**Made with ❤️ for the AI & ML community**
-
-[⬆ Back to Top](#-gpu-pro)
-
-</div>
-
----
-
-## 📚 Documentation
-
-For complete documentation including:
-- Installation & Setup
-- Building from Source
-- Alert System Guide
-- Network Access & Security
-- Hub Mode Configuration
-- CLI Reference
-- Troubleshooting
-- Contributing Guidelines
-
-**→ See [DOCUMENTATION.md](DOCUMENTATION.md)**
-
