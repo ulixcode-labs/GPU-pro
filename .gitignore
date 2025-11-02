@@ -38,8 +38,3 @@ coverage.out
 cloudflare-dashboard/
 
 # Ignore debug/minimal/release variants (we only keep production binaries)
-dist/*-debug
-dist/*-minimal
-dist/*-release
-dist/*.tar.gz
-dist/*.zip
