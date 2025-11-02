@@ -225,7 +225,7 @@ show_download_help() {
     echo "  3. Release exists: $DOWNLOAD_URL"
     echo ""
     echo "Manual download:"
-    echo "  1. Visit: https://github.com/$GITHUB_REPO/releases"
+    echo "  1. Visit: https://github.com/$GITHUB_REPO"
     echo "  2. Download: $BINARY_NAME"
     echo "  3. chmod +x $BINARY_NAME"
     echo "  4. ./$BINARY_NAME"
@@ -370,30 +370,8 @@ run_binary() {
         echo "============================================================="
         echo ""
 
-        # Start the binary in the background
-        "$BINARY_PATH" &
-        BINARY_PID=$!
-
-        # Wait a moment for the server to start
-        sleep 3
-
-        # Auto-open browser
-        print_info "Opening browser..."
-        if command -v open &> /dev/null; then
-            # macOS
-            open http://localhost:8889
-        elif command -v xdg-open &> /dev/null; then
-            # Linux
-            xdg-open http://localhost:8889
-        elif command -v start &> /dev/null; then
-            # Windows
-            start http://localhost:8889
-        else
-            print_warning "Could not auto-open browser. Please open http://localhost:8889 manually."
-        fi
-
-        # Wait for the binary process
-        wait $BINARY_PID
+        # Run the binary directly
+        exec "$BINARY_PATH"
     else
         echo "============================================================="
         echo "  GPU Pro CLI/TUI"
