@@ -64,14 +64,12 @@ build_binary() {
     local CGO_ENABLED=1
 
     # macOS builds don't need CGO (no GPU support)
-    # For cross-compilation from macOS, skip non-macOS builds with CGO
     if [ "$OS" = "darwin" ]; then
         CGO_ENABLED=0
         echo -e "${BLUE}  Note: macOS build without GPU support (CGO disabled)${NC}"
     elif [ "$CURRENT_OS" = "darwin" ] && [ "$OS" != "darwin" ]; then
-        # Cross-compiling from macOS to Linux/Windows requires CGO but lacks proper toolchain
-        echo -e "${YELLOW}  Note: Skipping $OS build (cross-compilation from macOS not supported for CGO builds)${NC}"
-        return 1
+        # Cross-compiling from macOS to Linux/Windows with CGO will fail, fall back to no-CGO
+        echo -e "${YELLOW}  Note: Cross-compiling $OS from macOS (will try CGO first, fall back to static build)${NC}"
     fi
 
     case "$FLAVOR" in
@@ -103,12 +101,25 @@ build_binary() {
     echo -e "${YELLOW}Building:${NC} $OS/$ARCH ($FLAVOR)${TYPE_LABEL}"
 
     # Build with platform-specific tags
-    GOOS=$OS GOARCH=$ARCH CGO_ENABLED=$CGO_ENABLED go build \
+    # Try with CGO first, if it fails and we're cross-compiling, try without CGO
+    if ! GOOS=$OS GOARCH=$ARCH CGO_ENABLED=$CGO_ENABLED go build \
         -tags="$BUILD_TAGS" \
         -ldflags="$LDFLAGS" \
         -o "$OUTPUT_PATH" \
         "$SOURCE_PATH" \
-        2>&1 | grep -v "^#" || true
+        2>&1 | grep -v "^#"; then
+
+        # If CGO build failed and we're not building for darwin (which already has CGO=0)
+        if [ "$CGO_ENABLED" = "1" ] && [ "$OS" != "darwin" ]; then
+            echo -e "${YELLOW}  CGO build failed, retrying without CGO (GPU support disabled)...${NC}"
+            GOOS=$OS GOARCH=$ARCH CGO_ENABLED=0 go build \
+                -tags="nogpu" \
+                -ldflags="$LDFLAGS" \
+                -o "$OUTPUT_PATH" \
+                "$SOURCE_PATH" \
+                2>&1 | grep -v "^#" || true
+        fi
+    fi
 
     if [ -f "$OUTPUT_PATH" ]; then
         local SIZE=$(du -h "$OUTPUT_PATH" | cut -f1)
