@@ -66,15 +66,13 @@ GPU Pro is the **modern solution** for NVIDIA GPU monitoring, designed for AI en
 
 ---
 
-## 📸 Screenshots
-
 ### Web UI Dashboard
 > Stunning real-time GPU monitoring with modern design
 
 <video src="https://youtu.be/vwBC54nXOPI" autoplay loop muted playsinline></video>
 https://youtu.be/vwBC54nXOPI
 
-![til](./gpu-pro-webui-2.gif)
+![til](./webui2.gif)
 
 
 ### Terminal UI
@@ -82,8 +80,6 @@ https://youtu.be/vwBC54nXOPI
 
 ![til](./gpu-pro-TUI.gif)
 
-### Network Monitoring
-> Live connection tracking with global geolocation
 
 ---
 
@@ -121,20 +117,6 @@ make run
 make run-cli
 ```
 
-### Option 3: Manual Build
-```bash
-# Build Web UI version
-go build -o gpu-pro
-
-# Build Terminal UI version
-go build -o gpu-pro-cli ./cmd/gpu-pro-cli
-
-# Run Web UI (access at http://localhost:1312)
-./gpu-pro
-
-# Run Terminal UI
-./gpu-pro-cli
-```
 
 ---
 
