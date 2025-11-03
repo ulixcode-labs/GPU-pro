@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"gpu-pro/analytics"
 	"gpu-pro/config"
 	"gpu-pro/monitor"
 
@@ -164,6 +165,9 @@ type model struct {
 	// Alert viewing
 	alertViewMode   bool
 	selectedAlert   int
+
+	// Analytics
+	heartbeatClient *analytics.HeartbeatClient
 }
 
 // Messages
@@ -198,17 +202,22 @@ func initialModel() model {
 	ti.CharLimit = 50
 	ti.Width = 30
 
+	// Initialize analytics heartbeat client
+	heartbeat := analytics.NewHeartbeatClient("v2.0", "tui")
+	heartbeat.Start()
+
 	return model{
-		monitor:      mon,
-		cfg:          cfg,
-		spinner:      s,
-		progress:     p,
-		gpuHistory:   make(map[int]*MetricHistory),
-		thresholds:   thresholds,
-		alerts:       []Alert{},
-		activeAlerts: make(map[string]bool),
-		processSort:  SortByMemory,
-		searchInput:  ti,
+		monitor:         mon,
+		cfg:             cfg,
+		spinner:         s,
+		progress:        p,
+		gpuHistory:      make(map[int]*MetricHistory),
+		thresholds:      thresholds,
+		alerts:          []Alert{},
+		activeAlerts:    make(map[string]bool),
+		processSort:     SortByMemory,
+		searchInput:     ti,
+		heartbeatClient: heartbeat,
 	}
 }
 
@@ -341,6 +350,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.monitor != nil {
 				m.monitor.Shutdown()
 			}
+			if m.heartbeatClient != nil {
+				m.heartbeatClient.Stop()
+			}
 			return m, tea.Quit
 		case "r":
 			// Refresh
@@ -438,6 +450,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.gpuData = msg.gpus
 		m.processes = msg.processes
 		m.systemInfo = msg.system
+
+		// Update GPU info for analytics
+		if m.heartbeatClient != nil && len(msg.gpus) > 0 {
+			// Collect GPU names for analytics
+			gpuNames := []string{}
+			for _, gpu := range msg.gpus {
+				if name := getString(gpu, "name", ""); name != "" {
+					gpuNames = append(gpuNames, name)
+				}
+			}
+			if len(gpuNames) > 0 {
+				m.heartbeatClient.SetGPUInfo(strings.Join(gpuNames, ", "))
+			}
+		}
 
 		// Update history and check alerts
 		m.updateHistory()

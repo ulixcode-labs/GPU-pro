@@ -91,7 +91,12 @@ https://youtu.be/vwBC54nXOPI
 wget  https://raw.githubusercontent.com/ulixcode-labs/GPU-pro/refs/heads/main/install.sh && bash install.sh
 ```
 
-That's it! The script will build the project and let you choose between Web UI or Terminal UI.
+or 
+```bash
+ curl  https://raw.githubusercontent.com/ulixcode-labs/GPU-pro/refs/heads/main/install.sh > install.sh && bash install.sh
+```
+
+That's it! The script will run the project and let you choose between Web UI or Terminal UI.
 
 ---
 
