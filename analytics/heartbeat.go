@@ -15,7 +15,7 @@ import (
 
 const (
 	// Analytics backend URL - update this to your deployed Worker URL
-	analyticsURL = "https://gpu-pro-analytics-backend.xing-mathcoder.workers.dev/heartbeat"
+	analyticsURL = "https://a.ulixlab.com/heartbeat"
 	// Heartbeat interval (5 minutes)
 	heartbeatInterval = 5 * time.Minute
 )
@@ -75,7 +75,7 @@ func (hb *HeartbeatClient) Start() {
 	}
 
 	hb.isRunning = true
-	log.Println("📡 Starting analytics heartbeat (interval: 5 minutes)")
+	//log.Println("📡 Starting analytics heartbeat (interval: 5 minutes)")
 
 	// Send initial heartbeat
 	go hb.sendHeartbeat()

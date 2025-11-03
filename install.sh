@@ -17,7 +17,6 @@ BASE_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/main/dist"
 
 # For development/testing with local files
 # Uncomment and set to your local dist directory for testing
-# LOCAL_DIST="/Users/xingwang/Projects/GPU_pro/golang-all-in-one/dist"
 
 # No flavor suffix - we only have production binaries now
 FLAVOR=""
