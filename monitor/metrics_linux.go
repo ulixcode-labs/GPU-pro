@@ -103,6 +103,9 @@ func (mc *MetricsCollector) addPerformance(device nvml.Device, data map[string]i
 			data["compute_mode"] = fmt.Sprintf("Mode %d", mode)
 		}
 	}
+
+	// Calculate MFU (Model FLOPs Utilization)
+	mc.calculateMFU(device, data)
 }
 
 func (mc *MetricsCollector) addMemory(device nvml.Device, data map[string]interface{}, gpuID string) {
@@ -296,4 +299,233 @@ func copyMap(m map[string]interface{}) map[string]interface{} {
 		copy[k] = v
 	}
 	return copy
+}
+
+// calculateMFU calculates Model FLOPs Utilization
+func (mc *MetricsCollector) calculateMFU(device nvml.Device, data map[string]interface{}) {
+	// Get GPU name to determine peak FLOPs
+	gpuName := ""
+	if name, ok := data["name"].(string); ok {
+		gpuName = strings.ToUpper(name)
+	}
+
+	// Get current clock speeds
+	var smClock float64 = 0
+	if clock, ret := device.GetClockInfo(nvml.CLOCK_SM); ret == nvml.SUCCESS {
+		smClock = float64(clock) // MHz
+	}
+
+	// Get GPU utilization
+	var utilization float64 = 0
+	if util, ok := data["utilization"].(float64); ok {
+		utilization = util
+	}
+
+	// Calculate peak FLOPs based on GPU architecture
+	peakTFLOPs := getPeakTFLOPs(gpuName)
+
+	if peakTFLOPs > 0 {
+		// Get max SM clock
+		var maxSmClock float64 = 0
+		if maxClock, ret := device.GetMaxClockInfo(nvml.CLOCK_SM); ret == nvml.SUCCESS {
+			maxSmClock = float64(maxClock)
+		}
+
+		// Calculate achieved TFLOPs
+		// MFU = (current_clock / max_clock) * (utilization / 100) * peak_TFLOPs
+		var achievedTFLOPs float64 = 0
+		var mfu float64 = 0
+
+		if maxSmClock > 0 && smClock > 0 {
+			clockRatio := smClock / maxSmClock
+			utilRatio := utilization / 100.0
+			achievedTFLOPs = clockRatio * utilRatio * peakTFLOPs
+			mfu = (achievedTFLOPs / peakTFLOPs) * 100.0
+		} else if utilization > 0 {
+			// Fallback: if clock info not available, use utilization directly
+			achievedTFLOPs = (utilization / 100.0) * peakTFLOPs
+			mfu = utilization
+		}
+
+		data["mfu"] = mfu
+		data["achieved_tflops"] = achievedTFLOPs
+		data["peak_tflops"] = peakTFLOPs
+	} else {
+		// Unknown GPU, set to 0
+		data["mfu"] = 0.0
+		data["achieved_tflops"] = 0.0
+		data["peak_tflops"] = 0.0
+	}
+}
+
+// getPeakTFLOPs returns the peak TFLOPs for known GPU models
+// These are FP32 (single precision) TFLOPs unless specified
+func getPeakTFLOPs(gpuName string) float64 {
+	// Hopper Architecture
+	if strings.Contains(gpuName, "H100") {
+		if strings.Contains(gpuName, "SXM") || strings.Contains(gpuName, "HBM3") {
+			return 67.0 // H100 SXM5 80GB FP32 TFLOPs
+		}
+		return 51.0 // H100 PCIe FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "H200") {
+		return 67.0 // H200 FP32 TFLOPs
+	}
+
+	// Ada Lovelace Architecture
+	if strings.Contains(gpuName, "RTX 4090") {
+		return 82.6 // RTX 4090 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "RTX 4080") {
+		if strings.Contains(gpuName, "SUPER") {
+			return 52.2 // RTX 4080 SUPER FP32 TFLOPs
+		}
+		return 48.7 // RTX 4080 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "RTX 4070") {
+		if strings.Contains(gpuName, "TI") || strings.Contains(gpuName, "Ti") {
+			if strings.Contains(gpuName, "SUPER") {
+				return 44.1 // RTX 4070 Ti SUPER FP32 TFLOPs
+			}
+			return 40.1 // RTX 4070 Ti FP32 TFLOPs
+		}
+		if strings.Contains(gpuName, "SUPER") {
+			return 35.5 // RTX 4070 SUPER FP32 TFLOPs
+		}
+		return 29.1 // RTX 4070 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "RTX 4060") {
+		if strings.Contains(gpuName, "TI") || strings.Contains(gpuName, "Ti") {
+			return 22.1 // RTX 4060 Ti FP32 TFLOPs
+		}
+		return 15.1 // RTX 4060 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "L40S") {
+		return 91.6 // L40S FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "L40") {
+		return 90.5 // L40 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "L4") {
+		return 30.3 // L4 FP32 TFLOPs
+	}
+
+	// Ampere Architecture
+	if strings.Contains(gpuName, "A100") {
+		if strings.Contains(gpuName, "80GB") || strings.Contains(gpuName, "SXM") {
+			return 19.5 // A100 80GB FP32 TFLOPs
+		}
+		return 19.5 // A100 40GB FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "A40") {
+		return 37.4 // A40 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "A30") {
+		return 10.3 // A30 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "A10") {
+		if strings.Contains(gpuName, "A10G") {
+			return 31.2 // A10G FP32 TFLOPs
+		}
+		return 31.2 // A10 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "A6000") {
+		return 38.7 // A6000 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "A5000") {
+		return 27.8 // A5000 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "A4000") {
+		return 19.2 // A4000 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "A2000") {
+		return 8.0 // A2000 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "RTX 3090") {
+		if strings.Contains(gpuName, "TI") || strings.Contains(gpuName, "Ti") {
+			return 40.0 // RTX 3090 Ti FP32 TFLOPs
+		}
+		return 35.6 // RTX 3090 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "RTX 3080") {
+		if strings.Contains(gpuName, "TI") || strings.Contains(gpuName, "Ti") {
+			return 34.1 // RTX 3080 Ti FP32 TFLOPs
+		}
+		return 29.8 // RTX 3080 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "RTX 3070") {
+		if strings.Contains(gpuName, "TI") || strings.Contains(gpuName, "Ti") {
+			return 21.8 // RTX 3070 Ti FP32 TFLOPs
+		}
+		return 20.3 // RTX 3070 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "RTX 3060") {
+		if strings.Contains(gpuName, "TI") || strings.Contains(gpuName, "Ti") {
+			return 16.2 // RTX 3060 Ti FP32 TFLOPs
+		}
+		return 13.0 // RTX 3060 FP32 TFLOPs
+	}
+
+	// Turing Architecture
+	if strings.Contains(gpuName, "RTX 2080") {
+		if strings.Contains(gpuName, "TI") || strings.Contains(gpuName, "Ti") {
+			return 13.4 // RTX 2080 Ti FP32 TFLOPs
+		}
+		if strings.Contains(gpuName, "SUPER") {
+			return 11.2 // RTX 2080 SUPER FP32 TFLOPs
+		}
+		return 10.1 // RTX 2080 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "RTX 2070") {
+		if strings.Contains(gpuName, "SUPER") {
+			return 9.1 // RTX 2070 SUPER FP32 TFLOPs
+		}
+		return 7.5 // RTX 2070 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "RTX 2060") {
+		if strings.Contains(gpuName, "SUPER") {
+			return 7.2 // RTX 2060 SUPER FP32 TFLOPs
+		}
+		return 6.5 // RTX 2060 FP32 TFLOPs
+	}
+
+	// Volta Architecture
+	if strings.Contains(gpuName, "V100") {
+		if strings.Contains(gpuName, "32GB") || strings.Contains(gpuName, "SXM") {
+			return 15.7 // V100 32GB FP32 TFLOPs
+		}
+		return 14.0 // V100 16GB FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "TITAN V") {
+		return 15.0 // Titan V FP32 TFLOPs
+	}
+
+	// Pascal Architecture
+	if strings.Contains(gpuName, "P100") {
+		return 9.3 // P100 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "GTX 1080") {
+		if strings.Contains(gpuName, "TI") || strings.Contains(gpuName, "Ti") {
+			return 11.3 // GTX 1080 Ti FP32 TFLOPs
+		}
+		return 8.9 // GTX 1080 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "GTX 1070") {
+		if strings.Contains(gpuName, "TI") || strings.Contains(gpuName, "Ti") {
+			return 8.1 // GTX 1070 Ti FP32 TFLOPs
+		}
+		return 6.5 // GTX 1070 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "GTX 1060") {
+		return 4.4 // GTX 1060 FP32 TFLOPs
+	}
+	if strings.Contains(gpuName, "TITAN X") {
+		if strings.Contains(gpuName, "PASCAL") {
+			return 11.0 // Titan X Pascal FP32 TFLOPs
+		}
+		return 6.1 // Titan X Maxwell FP32 TFLOPs
+	}
+
+	// Unknown GPU - return 0 to indicate we can't calculate MFU
+	return 0.0
 }

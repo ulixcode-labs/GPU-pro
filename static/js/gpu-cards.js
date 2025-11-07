@@ -40,6 +40,11 @@ function createOverviewCard(gpuId, gpuInfo) {
                     <div class="overview-metric-value" id="overview-power-${gpuId}">${getMetricValue(gpuInfo, 'power_draw', 0).toFixed(0)}W</div>
                     <div class="overview-metric-label">Power Draw</div>
                 </div>
+                ${hasMetric(gpuInfo, 'mfu') && gpuInfo.mfu > 0 ? `
+                <div class="overview-metric">
+                    <div class="overview-metric-value" id="overview-mfu-${gpuId}">${getMetricValue(gpuInfo, 'mfu', 0).toFixed(1)}%</div>
+                    <div class="overview-metric-label">MFU</div>
+                </div>` : ''}
             </div>
 
             <div class="overview-chart-section">
@@ -63,11 +68,13 @@ function updateOverviewCard(gpuId, gpuInfo, shouldUpdateDOM = true) {
         const tempEl = document.getElementById(`overview-temp-${gpuId}`);
         const memEl = document.getElementById(`overview-mem-${gpuId}`);
         const powerEl = document.getElementById(`overview-power-${gpuId}`);
+        const mfuEl = document.getElementById(`overview-mfu-${gpuId}`);
 
         if (utilEl) utilEl.textContent = `${getMetricValue(gpuInfo, 'utilization', 0)}%`;
         if (tempEl) tempEl.textContent = `${getMetricValue(gpuInfo, 'temperature', 0)}°C`;
         if (memEl) memEl.textContent = `${Math.round(memPercent)}%`;
         if (powerEl) powerEl.textContent = `${getMetricValue(gpuInfo, 'power_draw', 0).toFixed(0)}W`;
+        if (mfuEl && hasMetric(gpuInfo, 'mfu')) mfuEl.textContent = `${getMetricValue(gpuInfo, 'mfu', 0).toFixed(1)}%`;
     }
 
     // ALWAYS update chart data for the mini chart (smooth animations)
@@ -264,6 +271,18 @@ function createGPUCard(gpuId, gpuInfo) {
                         <div class="progress-fill" id="mem-util-bar-${gpuId}" style="width: ${gpuInfo.memory_utilization || 0}%"></div>
                     </div>
                 </div>
+
+                ${hasMetric(gpuInfo, 'mfu') && gpuInfo.mfu > 0 ? `
+                <div class="metric-card metric-card-featured">
+                    <div class="metric-header">
+                        <span class="metric-label">MFU (Model FLOPs Utilization)</span>
+                    </div>
+                    <div class="metric-value-large" id="mfu-${gpuId}">${gpuInfo.mfu.toFixed(1)}%</div>
+                    <div class="metric-sublabel" id="mfu-details-${gpuId}">${gpuInfo.achieved_tflops.toFixed(2)} / ${gpuInfo.peak_tflops.toFixed(1)} TFLOPS</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill mfu-bar" id="mfu-bar-${gpuId}" style="width: ${gpuInfo.mfu}%"></div>
+                    </div>
+                </div>` : ''}
 
                 <div class="metric-card">
                     <div class="metric-header">
@@ -823,6 +842,19 @@ function updateGPUDisplay(gpuId, gpuInfo, shouldUpdateDOM = true) {
         if (pcieEl) pcieEl.textContent = `Gen ${getMetricValue(gpuInfo, 'pcie_gen', 'N/A')}`;
         if (pstateEl) pstateEl.textContent = `${getMetricValue(gpuInfo, 'performance_state', 'N/A')}`;
         if (encoderEl) encoderEl.textContent = `${getMetricValue(gpuInfo, 'encoder_sessions', 0)}`;
+
+        // Update MFU (Model FLOPs Utilization)
+        const mfuEl = document.getElementById(`mfu-${gpuId}`);
+        const mfuDetailsEl = document.getElementById(`mfu-details-${gpuId}`);
+        const mfuBar = document.getElementById(`mfu-bar-${gpuId}`);
+        if (mfuEl && hasMetric(gpuInfo, 'mfu')) {
+            const mfu = getMetricValue(gpuInfo, 'mfu', 0);
+            const achievedTFLOPs = getMetricValue(gpuInfo, 'achieved_tflops', 0);
+            const peakTFLOPs = getMetricValue(gpuInfo, 'peak_tflops', 0);
+            mfuEl.textContent = `${mfu.toFixed(1)}%`;
+            if (mfuDetailsEl) mfuDetailsEl.textContent = `${achievedTFLOPs.toFixed(2)} / ${peakTFLOPs.toFixed(1)} TFLOPS`;
+            if (mfuBar) mfuBar.style.width = `${mfu}%`;
+        }
 
         // Update header badges
         const pstateHeaderEl = document.getElementById(`pstate-header-${gpuId}`);

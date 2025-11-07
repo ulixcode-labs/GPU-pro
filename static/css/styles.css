@@ -664,6 +664,11 @@ body::after {
     background: linear-gradient(90deg, var(--success), var(--info));
 }
 
+.mfu-bar {
+    background: linear-gradient(90deg, #4facfe, #00f2fe);
+    box-shadow: 0 0 10px rgba(79, 172, 254, 0.5);
+}
+
 .status-dot {
     display: inline-block;
     width: 8px;
