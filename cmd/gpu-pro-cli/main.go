@@ -95,6 +95,7 @@ type MetricHistory struct {
 	Temperature []float64
 	Memory      []float64
 	Power       []float64
+	MFU         []float64
 }
 
 // Alert represents a threshold alert
@@ -307,6 +308,9 @@ func (m model) fetchData() tea.Msg {
 		"cpu_percent":    0.0,
 		"memory_percent": 0.0,
 		"disk_percent":   0.0,
+		"disk_used_gb":   0.0,
+		"disk_total_gb":  0.0,
+		"disk_free_gb":   0.0,
 	}
 
 	if len(cpuPercent) > 0 {
@@ -317,6 +321,9 @@ func (m model) fetchData() tea.Msg {
 	}
 	if diskUsage != nil {
 		systemInfo["disk_percent"] = diskUsage.UsedPercent
+		systemInfo["disk_used_gb"] = float64(diskUsage.Used) / (1024 * 1024 * 1024)
+		systemInfo["disk_total_gb"] = float64(diskUsage.Total) / (1024 * 1024 * 1024)
+		systemInfo["disk_free_gb"] = float64(diskUsage.Free) / (1024 * 1024 * 1024)
 	}
 
 	return dataMsg{
@@ -572,6 +579,7 @@ func (m *model) updateHistory() {
 				Temperature: []float64{},
 				Memory:      []float64{},
 				Power:       []float64{},
+				MFU:         []float64{},
 			}
 		}
 
@@ -589,6 +597,9 @@ func (m *model) updateHistory() {
 		powerLimit := getFloat(gpu, "power_limit", 1)
 		hist.Power = append(hist.Power, (power/powerLimit)*100)
 
+		mfu := getFloat(gpu, "mfu", 0)
+		hist.MFU = append(hist.MFU, mfu)
+
 		// Keep only last N values
 		if len(hist.Utilization) > historySize {
 			hist.Utilization = hist.Utilization[1:]
@@ -601,6 +612,9 @@ func (m *model) updateHistory() {
 		}
 		if len(hist.Power) > historySize {
 			hist.Power = hist.Power[1:]
+		}
+		if len(hist.MFU) > historySize {
+			hist.MFU = hist.MFU[1:]
 		}
 	}
 }
@@ -1075,6 +1089,9 @@ func (m model) renderSystemInfo() string {
 	cpuPercent := getFloat(m.systemInfo, "cpu_percent", 0)
 	memPercent := getFloat(m.systemInfo, "memory_percent", 0)
 	diskPercent := getFloat(m.systemInfo, "disk_percent", 0)
+	diskUsed := getFloat(m.systemInfo, "disk_used_gb", 0)
+	diskTotal := getFloat(m.systemInfo, "disk_total_gb", 0)
+	diskFree := getFloat(m.systemInfo, "disk_free_gb", 0)
 
 	header := headerStyle.Render("System Resources")
 
@@ -1082,11 +1099,23 @@ func (m model) renderSystemInfo() string {
 	memBar := m.renderBar("Memory", memPercent, 100, "%")
 	diskBar := m.renderBar("Disk", diskPercent, 100, "%")
 
+	// Add detailed disk info
+	diskInfo := fmt.Sprintf(
+		"%s %s | %s %s | %s %s",
+		labelStyle.Render("Used:"),
+		valueStyle.Render(fmt.Sprintf("%.1f GB", diskUsed)),
+		labelStyle.Render("Free:"),
+		valueStyle.Render(fmt.Sprintf("%.1f GB", diskFree)),
+		labelStyle.Render("Total:"),
+		valueStyle.Render(fmt.Sprintf("%.1f GB", diskTotal)),
+	)
+
 	content := lipgloss.JoinVertical(lipgloss.Left,
 		header,
 		cpuBar,
 		memBar,
 		diskBar,
+		diskInfo,
 	)
 
 	return boxStyle.Render(content)
@@ -1108,14 +1137,20 @@ func (m model) renderGPU(id int, gpu map[string]interface{}) string {
 
 	header := headerStyle.Render(fmt.Sprintf("GPU %d: %s", id, name))
 
+	// Get MFU and additional metrics
+	mfu := getFloat(gpu, "mfu", 0)
+	peakTFLOPs := getFloat(gpu, "peak_tflops", 0)
+	achievedTFLOPs := getFloat(gpu, "achieved_tflops", 0)
+
 	// Get sparklines
 	hist := m.gpuHistory[id]
-	var utilSparkline, tempSparkline, memSparkline, powerSparkline string
+	var utilSparkline, tempSparkline, memSparkline, powerSparkline, mfuSparkline string
 	if hist != nil {
 		utilSparkline = renderSparkline(hist.Utilization)
 		tempSparkline = renderSparkline(hist.Temperature)
 		memSparkline = renderSparkline(hist.Memory)
 		powerSparkline = renderSparkline(hist.Power)
+		mfuSparkline = renderSparkline(hist.MFU)
 	}
 
 	// Metrics with sparklines and trend indicators
@@ -1124,16 +1159,40 @@ func (m model) renderGPU(id int, gpu map[string]interface{}) string {
 	memBar := m.renderBarWithSparkline("Memory", memPercent, 100, "%", memSparkline, getTrendIndicator(hist.Memory))
 	powerBar := m.renderBarWithSparkline("Power", powerPercent, 100, "%", powerSparkline, getTrendIndicator(hist.Power))
 
+	// MFU bar (only show if peak TFLOPs is known, otherwise show as info line)
+	var mfuBar string
+	if peakTFLOPs > 0 {
+		mfuBar = m.renderBarWithSparkline("MFU", mfu, 100, "%", mfuSparkline, getTrendIndicator(hist.MFU))
+	} else {
+		mfuBar = labelStyle.Render("MFU:") + " " +
+			lipgloss.NewStyle().Foreground(mutedColor).Render("N/A (GPU model not in database)")
+	}
+
 	// Additional info
-	info := fmt.Sprintf(
-		"%s %s | %s %s | %s %.1f W / %.1f W",
-		labelStyle.Render("Fan:"),
-		valueStyle.Render(fmt.Sprintf("%.0f%%", fanSpeed)),
-		labelStyle.Render("Memory:"),
-		valueStyle.Render(fmt.Sprintf("%.0f / %.0f MiB", memUsed, memTotal)),
-		labelStyle.Render("Power:"),
-		power, powerLimit,
-	)
+	var info string
+	if peakTFLOPs > 0 {
+		info = fmt.Sprintf(
+			"%s %s | %s %s | %s %.1f W / %.1f W | %s %.1f / %.1f TFLOPs",
+			labelStyle.Render("Fan:"),
+			valueStyle.Render(fmt.Sprintf("%.0f%%", fanSpeed)),
+			labelStyle.Render("Memory:"),
+			valueStyle.Render(fmt.Sprintf("%.0f / %.0f MiB", memUsed, memTotal)),
+			labelStyle.Render("Power:"),
+			power, powerLimit,
+			labelStyle.Render("Compute:"),
+			achievedTFLOPs, peakTFLOPs,
+		)
+	} else {
+		info = fmt.Sprintf(
+			"%s %s | %s %s | %s %.1f W / %.1f W",
+			labelStyle.Render("Fan:"),
+			valueStyle.Render(fmt.Sprintf("%.0f%%", fanSpeed)),
+			labelStyle.Render("Memory:"),
+			valueStyle.Render(fmt.Sprintf("%.0f / %.0f MiB", memUsed, memTotal)),
+			labelStyle.Render("Power:"),
+			power, powerLimit,
+		)
+	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left,
 		header,
@@ -1141,6 +1200,7 @@ func (m model) renderGPU(id int, gpu map[string]interface{}) string {
 		tempBar,
 		memBar,
 		powerBar,
+		mfuBar,
 		info,
 	)
 
@@ -1448,6 +1508,9 @@ func main() {
 		case "--config-thresholds":
 			configureThresholds()
 			return
+		case "--debug-mfu":
+			debugMFU()
+			return
 		case "--help":
 			printHelp()
 			return
@@ -1496,6 +1559,66 @@ func configureThresholds() {
 	fmt.Println("\nEdit gpu-thresholds.json to modify")
 }
 
+// Debug MFU calculation
+func debugMFU() {
+	fmt.Println("MFU Debug Information")
+	fmt.Println("====================\n")
+
+	mon := monitor.NewGPUMonitor()
+	if mon == nil {
+		fmt.Println("Error: Could not initialize GPU monitor")
+		return
+	}
+	defer mon.Shutdown()
+
+	// Wait a moment for data collection
+	time.Sleep(1 * time.Second)
+
+	gpuData, err := mon.GetGPUData()
+	if err != nil {
+		fmt.Printf("Error getting GPU data: %v\n", err)
+		return
+	}
+
+	if len(gpuData) == 0 {
+		fmt.Println("No GPUs detected")
+		return
+	}
+
+	for gpuID, gpuInfo := range gpuData {
+		if data, ok := gpuInfo.(map[string]interface{}); ok {
+			fmt.Printf("GPU %s:\n", gpuID)
+			fmt.Printf("  Name: %s\n", getString(data, "name", "Unknown"))
+			fmt.Printf("  Architecture: %s\n", getString(data, "architecture", "Unknown"))
+			fmt.Println()
+
+			fmt.Println("  MFU Metrics:")
+			fmt.Printf("    MFU: %.2f%%\n", getFloat(data, "mfu", 0))
+			fmt.Printf("    Peak TFLOPs: %.2f\n", getFloat(data, "peak_tflops", 0))
+			fmt.Printf("    Achieved TFLOPs: %.2f\n", getFloat(data, "achieved_tflops", 0))
+			fmt.Println()
+
+			fmt.Println("  Debug Info:")
+			fmt.Printf("    GPU Name (uppercase): %s\n", getString(data, "mfu_debug_gpu_name", "N/A"))
+			fmt.Printf("    SM Clock: %.0f MHz\n", getFloat(data, "mfu_debug_sm_clock", 0))
+			fmt.Printf("    Max SM Clock: %.0f MHz\n", getFloat(data, "mfu_debug_max_sm_clock", 0))
+			fmt.Printf("    Utilization: %.2f%%\n", getFloat(data, "mfu_debug_utilization", 0))
+			if status := getString(data, "mfu_debug_status", ""); status != "" {
+				fmt.Printf("    Status: %s\n", status)
+			}
+			fmt.Println()
+
+			if getFloat(data, "peak_tflops", 0) == 0 {
+				fmt.Println("  ⚠️  This GPU model is not in the MFU database.")
+				fmt.Println("      MFU calculation requires peak TFLOPs specification.")
+				fmt.Println("      You can add support by editing monitor/metrics_linux.go")
+				fmt.Printf("      and adding '%s' to the getPeakTFLOPs() function.\n", getString(data, "name", "Unknown"))
+			}
+			fmt.Println()
+		}
+	}
+}
+
 // Print help
 func printHelp() {
 	fmt.Println("GPU Pro CLI - Advanced GPU Monitoring")
@@ -1503,6 +1626,7 @@ func printHelp() {
 	fmt.Println("  gpu-pro-cli                    Start interactive monitoring")
 	fmt.Println("  gpu-pro-cli --view-alerts      View alert history")
 	fmt.Println("  gpu-pro-cli --config-thresholds View current threshold configuration")
+	fmt.Println("  gpu-pro-cli --debug-mfu        Show MFU debug information")
 	fmt.Println("  gpu-pro-cli --help             Show this help")
 	fmt.Println("\nInteractive Mode Controls:")
 	fmt.Println("  q, Ctrl+C    Quit")
@@ -1523,6 +1647,7 @@ func printHelp() {
 	fmt.Println("  s            Cycle sort order (memory, GPU, CPU, PID, name)")
 	fmt.Println("\nFeatures:")
 	fmt.Println("  • Historical sparklines showing 10-second trends")
+	fmt.Println("  • MFU (Model FLOPs Utilization) calculation for supported GPUs")
 	fmt.Println("  • Interactive alert management (snooze, acknowledge)")
 	fmt.Println("  • Smart alert expiration (30s resolved, 1min acknowledged, 1h active)")
 	fmt.Println("  • Automatic threshold alerts with persistent logging")

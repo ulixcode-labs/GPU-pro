@@ -324,12 +324,19 @@ func (mc *MetricsCollector) calculateMFU(device nvml.Device, data map[string]int
 	// Calculate peak FLOPs based on GPU architecture
 	peakTFLOPs := getPeakTFLOPs(gpuName)
 
+	// Debug info
+	data["mfu_debug_gpu_name"] = gpuName
+	data["mfu_debug_sm_clock"] = smClock
+	data["mfu_debug_utilization"] = utilization
+
 	if peakTFLOPs > 0 {
 		// Get max SM clock
 		var maxSmClock float64 = 0
 		if maxClock, ret := device.GetMaxClockInfo(nvml.CLOCK_SM); ret == nvml.SUCCESS {
 			maxSmClock = float64(maxClock)
 		}
+
+		data["mfu_debug_max_sm_clock"] = maxSmClock
 
 		// Calculate achieved TFLOPs
 		// MFU = (current_clock / max_clock) * (utilization / 100) * peak_TFLOPs
@@ -351,10 +358,11 @@ func (mc *MetricsCollector) calculateMFU(device nvml.Device, data map[string]int
 		data["achieved_tflops"] = achievedTFLOPs
 		data["peak_tflops"] = peakTFLOPs
 	} else {
-		// Unknown GPU, set to 0
+		// Unknown GPU, set to 0 but keep debug info
 		data["mfu"] = 0.0
 		data["achieved_tflops"] = 0.0
 		data["peak_tflops"] = 0.0
+		data["mfu_debug_status"] = "GPU model not in database"
 	}
 }
 
