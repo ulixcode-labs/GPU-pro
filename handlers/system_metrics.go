@@ -600,20 +600,8 @@ func GetTopLargestFiles(n int, directory string) []LargeFile {
 		// Get apparent size
 		apparentSize := info.Size()
 
-		// Get actual disk usage using syscall
-		var actualSize int64
-		var isSparse bool
-
-		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-			// Blocks * 512 = actual bytes on disk
-			actualSize = stat.Blocks * 512
-			// File is sparse if apparent size > actual disk usage
-			isSparse = apparentSize > actualSize
-		} else {
-			// Fallback: use apparent size if syscall fails
-			actualSize = apparentSize
-			isSparse = false
-		}
+		// Get actual disk usage (platform-specific)
+		actualSize, isSparse := getActualFileSize(info, apparentSize)
 
 		files = append(files, LargeFile{
 			Path:           path,

@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"gpu-pro/analytics"
@@ -791,8 +790,8 @@ func (m *model) killSelectedProcess() {
 		return
 	}
 
-	// Send SIGTERM
-	syscall.Kill(pid, syscall.SIGTERM)
+	// Kill process (platform-specific)
+	killProcess(pid)
 }
 
 // Cycle sort order
