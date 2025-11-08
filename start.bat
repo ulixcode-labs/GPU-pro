@@ -4,17 +4,8 @@ REM This script makes it easy to build and run GPU Pro with a single command
 
 setlocal enabledelayedexpansion
 
-REM ================================================
-REM Banner
-REM ================================================
-:print_banner
-echo.
-echo ==================================================
-echo            GPU Pro - Quick Start
-echo         Master Your AI Workflow
-echo ==================================================
-echo.
-goto :eof
+REM Start main execution
+goto main
 
 REM ================================================
 REM Print messages
@@ -120,22 +111,6 @@ gpu-pro-cli.exe
 goto :eof
 
 REM ================================================
-REM Show menu
-REM ================================================
-:show_menu
-echo.
-echo Choose an option:
-echo.
-echo   1) Web UI      - Beautiful web dashboard (http://localhost:8889)
-echo   2) Terminal UI - Elegant TUI for terminal sessions
-echo   3) Build both  - Just build, don't run
-echo   4) Clean       - Remove built binaries
-echo   q) Quit
-echo.
-set /p "choice=Enter your choice [1-4/q]: "
-goto :eof
-
-REM ================================================
 REM Clean binaries
 REM ================================================
 :clean_binaries
@@ -150,11 +125,19 @@ REM Main function
 REM ================================================
 :main
 cls
-call :print_banner
+echo.
+echo ==================================================
+echo            GPU Pro - Quick Start
+echo         Master Your AI Workflow
+echo ==================================================
+echo.
 
 REM Check Go installation
 call :check_go
-if %errorlevel% neq 0 exit /b 1
+if %errorlevel% neq 0 (
+    pause
+    exit /b 1
+)
 echo.
 
 REM Parse command line arguments for direct execution
@@ -178,7 +161,10 @@ goto interactive_menu
 call :check_binaries
 if "!WEBUI_EXISTS!"=="false" (
     call :build_webui
-    if %errorlevel% neq 0 exit /b 1
+    if %errorlevel% neq 0 (
+        pause
+        exit /b 1
+    )
 ) else (
     call :success "Using existing binary: gpu-pro.exe"
 )
@@ -189,7 +175,10 @@ exit /b 0
 call :check_binaries
 if "!TUI_EXISTS!"=="false" (
     call :build_tui
-    if %errorlevel% neq 0 exit /b 1
+    if %errorlevel% neq 0 (
+        pause
+        exit /b 1
+    )
 ) else (
     call :success "Using existing binary: gpu-pro-cli.exe"
 )
@@ -201,10 +190,13 @@ call :build_webui
 call :build_tui
 echo.
 call :success "Build complete! Use 'start.bat' to run."
+echo.
+pause
 exit /b 0
 
 :direct_clean
 call :clean_binaries
+pause
 exit /b 0
 
 :direct_quit
@@ -228,56 +220,70 @@ if "!TUI_EXISTS!"=="true" (
 )
 
 :menu_loop
-call :show_menu
+echo.
+echo Choose an option:
+echo.
+echo   1) Web UI      - Beautiful web dashboard (http://localhost:8889)
+echo   2) Terminal UI - Elegant TUI for terminal sessions
+echo   3) Build both  - Just build, don't run
+echo   4) Clean       - Remove built binaries
+echo   q) Quit
+echo.
+set /p choice=Enter your choice [1-4/q]:
 
-if "!choice!"=="1" (
-    if "!WEBUI_EXISTS!"=="false" (
-        echo.
-        call :build_webui
-        if %errorlevel% neq 0 goto menu_loop
-    )
-    call :run_webui
-    goto end
-)
-
-if "!choice!"=="2" (
-    if "!TUI_EXISTS!"=="false" (
-        echo.
-        call :build_tui
-        if %errorlevel% neq 0 goto menu_loop
-    )
-    call :run_tui
-    goto end
-)
-
-if "!choice!"=="3" (
-    echo.
-    call :build_webui
-    echo.
-    call :build_tui
-    echo.
-    call :success "Build complete! Run 'start.bat' again to start."
-    echo.
-    exit /b 0
-)
-
-if "!choice!"=="4" (
-    echo.
-    call :clean_binaries
-    echo.
-    exit /b 0
-)
-
-if /i "!choice!"=="q" (
-    echo.
-    call :info "Goodbye!"
-    echo.
-    exit /b 0
-)
+if "%choice%"=="1" goto choice_1
+if "%choice%"=="2" goto choice_2
+if "%choice%"=="3" goto choice_3
+if "%choice%"=="4" goto choice_4
+if /i "%choice%"=="q" goto choice_quit
 
 echo.
 call :error "Invalid choice. Please enter 1, 2, 3, 4, or q"
 goto menu_loop
+
+:choice_1
+if "!WEBUI_EXISTS!"=="false" (
+    echo.
+    call :build_webui
+    if %errorlevel% neq 0 goto menu_loop
+    set WEBUI_EXISTS=true
+)
+call :run_webui
+goto end
+
+:choice_2
+if "!TUI_EXISTS!"=="false" (
+    echo.
+    call :build_tui
+    if %errorlevel% neq 0 goto menu_loop
+    set TUI_EXISTS=true
+)
+call :run_tui
+goto end
+
+:choice_3
+echo.
+call :build_webui
+echo.
+call :build_tui
+echo.
+call :success "Build complete! Run 'start.bat' again to start."
+echo.
+pause
+exit /b 0
+
+:choice_4
+echo.
+call :clean_binaries
+echo.
+pause
+exit /b 0
+
+:choice_quit
+echo.
+call :info "Goodbye!"
+echo.
+exit /b 0
 
 :end
 exit /b 0
