@@ -1,24 +1,26 @@
-// +build windows,!nogpu
+// +build windows
 
 package monitor
 
 import (
+	"encoding/csv"
 	"fmt"
 	"log"
+	"os/exec"
+	"strconv"
+	"strings"
 	"sync"
 
 	"gpu-pro/analytics"
 
-	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	"github.com/shirou/gopsutil/v3/process"
 )
 
-// GPUMonitor monitors NVIDIA GPUs using NVML (Windows)
+// GPUMonitor monitors NVIDIA GPUs using nvidia-smi on Windows
 type GPUMonitor struct {
 	initialized     bool
-	collector       *MetricsCollector
-	useSMI          map[string]bool // Track which GPUs use nvidia-smi
 	gpuData         map[string]interface{}
+	gpuCount        int
 	mu              sync.RWMutex
 	heartbeatClient *analytics.HeartbeatClient
 }
@@ -28,117 +30,147 @@ func (m *GPUMonitor) IsInitialized() bool {
 	return m.initialized
 }
 
-// NewGPUMonitor creates a new GPU monitor
+// NewGPUMonitor creates a new GPU monitor using nvidia-smi
 func NewGPUMonitor() *GPUMonitor {
 	monitor := &GPUMonitor{
-		collector:       NewMetricsCollector(),
-		useSMI:          make(map[string]bool),
 		gpuData:         make(map[string]interface{}),
-		heartbeatClient: analytics.NewHeartbeatClient("v2.0", "webui"), // GPU Pro version, WebUI mode
+		heartbeatClient: analytics.NewHeartbeatClient("v2.0", "webui-windows"),
 	}
 
-	// Initialize NVML
-	if ret := nvml.Init(); ret != nvml.SUCCESS {
-		log.Printf("⚠️  No NVIDIA GPU detected or NVML not available (error code: %v)", ret)
+	// Check if nvidia-smi is available
+	cmd := exec.Command("nvidia-smi", "--list-gpus")
+	output, err := cmd.Output()
+	if err != nil {
+		log.Printf("⚠️  nvidia-smi not found or no NVIDIA GPU detected")
 		log.Printf("✓  System metrics will still be available")
 		monitor.initialized = false
-		// Still start heartbeat even without GPU
 		monitor.heartbeatClient.Start()
 		return monitor
 	}
 
+	// Count GPUs
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	monitor.gpuCount = len(lines)
 	monitor.initialized = true
-	version, ret := nvml.SystemGetDriverVersion()
-	if ret == nvml.SUCCESS {
-		log.Printf("NVML initialized - Driver: %s", version)
+
+	log.Printf("✓  GPU monitoring initialized using nvidia-smi")
+	log.Printf("✓  Detected %d GPU(s)", monitor.gpuCount)
+
+	// Log GPU names
+	for i, line := range lines {
+		if strings.Contains(line, "GPU") {
+			log.Printf("   GPU %d: %s", i, strings.TrimSpace(line))
+		}
 	}
 
-	// Detect which GPUs need nvidia-smi
-	monitor.detectSMIGPUs()
-
-	// Start analytics heartbeat
 	monitor.heartbeatClient.Start()
-
 	return monitor
 }
 
-func (m *GPUMonitor) detectSMIGPUs() {
-	count, ret := nvml.DeviceGetCount()
-	if ret != nvml.SUCCESS {
-		log.Printf("Failed to get device count: %v", nvml.ErrorString(ret))
-		return
-	}
-
-	log.Printf("Detected %d GPU(s)", count)
-
-	for i := 0; i < count; i++ {
-		gpuID := fmt.Sprintf("%d", i)
-		device, ret := nvml.DeviceGetHandleByIndex(i)
-		if ret != nvml.SUCCESS {
-			m.useSMI[gpuID] = true
-			log.Printf("GPU %d: Failed to get handle, using nvidia-smi fallback", i)
-			continue
-		}
-
-		// Try to collect data
-		data := m.collector.CollectAll(device, gpuID)
-		gpuName := "Unknown"
-		if name, ok := data["name"].(string); ok {
-			gpuName = name
-		}
-
-		// Check if utilization is available
-		if util, ok := data["utilization"].(float64); !ok || util < 0 {
-			m.useSMI[gpuID] = true
-			log.Printf("GPU %d (%s): Utilization metric not available via NVML", i, gpuName)
-			log.Printf("GPU %d (%s): Switching to nvidia-smi mode", i, gpuName)
-		} else {
-			m.useSMI[gpuID] = false
-			log.Printf("GPU %d (%s): Using NVML (utilization: %.1f%%)", i, gpuName, util)
-		}
-	}
-
-	nvmlCount := 0
-	smiCount := 0
-	for _, useSMI := range m.useSMI {
-		if useSMI {
-			smiCount++
-		} else {
-			nvmlCount++
-		}
-	}
-
-	if smiCount > 0 {
-		log.Printf("Boot detection complete: %d GPU(s) using NVML, %d GPU(s) using nvidia-smi", nvmlCount, smiCount)
-	} else {
-		log.Printf("Boot detection complete: All %d GPU(s) using NVML", nvmlCount)
-	}
-}
-
-// GetGPUData collects metrics from all detected GPUs
+// GetGPUData collects metrics from all detected GPUs using nvidia-smi
 func (m *GPUMonitor) GetGPUData() (map[string]interface{}, error) {
 	if !m.initialized {
-		// Return empty map instead of error to allow graceful degradation
 		return make(map[string]interface{}), nil
 	}
 
-	count, ret := nvml.DeviceGetCount()
-	if ret != nvml.SUCCESS {
+	// Query nvidia-smi with CSV format for easy parsing
+	// Fields: index, name, temperature.gpu, utilization.gpu, utilization.memory,
+	//         memory.total, memory.used, memory.free, power.draw, power.limit,
+	//         clocks.current.graphics, clocks.current.memory, fan.speed, pcie.link.gen.current,
+	//         pcie.link.width.current
+	queryFields := []string{
+		"index",
+		"name",
+		"temperature.gpu",
+		"utilization.gpu",
+		"utilization.memory",
+		"memory.total",
+		"memory.used",
+		"memory.free",
+		"power.draw",
+		"power.limit",
+		"clocks.current.graphics",
+		"clocks.current.memory",
+		"fan.speed",
+		"pcie.link.gen.current",
+		"pcie.link.width.current",
+		"uuid",
+	}
+
+	query := strings.Join(queryFields, ",")
+	cmd := exec.Command("nvidia-smi", "--query-gpu="+query, "--format=csv,noheader,nounits")
+
+	output, err := cmd.Output()
+	if err != nil {
+		log.Printf("Failed to query nvidia-smi: %v", err)
+		return make(map[string]interface{}), nil
+	}
+
+	// Parse CSV output
+	reader := csv.NewReader(strings.NewReader(string(output)))
+	records, err := reader.ReadAll()
+	if err != nil {
+		log.Printf("Failed to parse nvidia-smi output: %v", err)
 		return make(map[string]interface{}), nil
 	}
 
 	gpuData := make(map[string]interface{})
 
-	for i := 0; i < count; i++ {
-		gpuID := fmt.Sprintf("%d", i)
-		device, ret := nvml.DeviceGetHandleByIndex(i)
-		if ret != nvml.SUCCESS {
-			log.Printf("GPU %d: Failed to get handle: %v", i, nvml.ErrorString(ret))
+	for _, record := range records {
+		if len(record) < len(queryFields) {
 			continue
 		}
 
-		// Collect GPU data
-		data := m.collector.CollectAll(device, gpuID)
+		// Parse GPU index
+		gpuID := strings.TrimSpace(record[0])
+
+		// Helper function to parse float
+		parseFloat := func(s string) float64 {
+			s = strings.TrimSpace(s)
+			if s == "[N/A]" || s == "N/A" || s == "" {
+				return 0.0
+			}
+			val, err := strconv.ParseFloat(s, 64)
+			if err != nil {
+				return 0.0
+			}
+			return val
+		}
+
+		// Helper function to parse int
+		parseInt := func(s string) int {
+			s = strings.TrimSpace(s)
+			if s == "[N/A]" || s == "N/A" || s == "" {
+				return 0
+			}
+			val, err := strconv.Atoi(s)
+			if err != nil {
+				return 0
+			}
+			return val
+		}
+
+		data := map[string]interface{}{
+			"id":                     gpuID,
+			"name":                   strings.TrimSpace(record[1]),
+			"temperature":            parseFloat(record[2]),
+			"utilization":            parseFloat(record[3]),
+			"memory_utilization":     parseFloat(record[4]),
+			"memory_total":           parseFloat(record[5]),
+			"memory_used":            parseFloat(record[6]),
+			"memory_free":            parseFloat(record[7]),
+			"power_draw":             parseFloat(record[8]),
+			"power_limit":            parseFloat(record[9]),
+			"clock_graphics":         parseFloat(record[10]),
+			"clock_memory":           parseFloat(record[11]),
+			"fan_speed":              parseFloat(record[12]),
+			"pcie_link_gen":          parseInt(record[13]),
+			"pcie_link_width":        parseInt(record[14]),
+			"uuid":                   strings.TrimSpace(record[15]),
+			"compute_processes_count": 0,
+			"graphics_processes_count": 0,
+		}
+
 		gpuData[gpuID] = data
 	}
 
@@ -146,7 +178,7 @@ func (m *GPUMonitor) GetGPUData() (map[string]interface{}, error) {
 	m.gpuData = gpuData
 	m.mu.Unlock()
 
-	// Update GPU info for heartbeat (first GPU only for simplicity)
+	// Update GPU info for heartbeat (first GPU only)
 	if len(gpuData) > 0 {
 		if gpu0, ok := gpuData["0"].(map[string]interface{}); ok {
 			if name, ok := gpu0["name"].(string); ok {
@@ -158,109 +190,97 @@ func (m *GPUMonitor) GetGPUData() (map[string]interface{}, error) {
 	return gpuData, nil
 }
 
-// GetProcesses gets GPU process information
+// GetProcesses gets GPU process information using nvidia-smi
 func (m *GPUMonitor) GetProcesses() ([]map[string]interface{}, error) {
 	if !m.initialized {
-		// Return empty slice instead of error to allow graceful degradation
 		return []map[string]interface{}{}, nil
 	}
 
-	count, ret := nvml.DeviceGetCount()
-	if ret != nvml.SUCCESS {
+	// Query nvidia-smi for compute processes
+	// Fields: gpu_uuid, pid, used_memory, process_name
+	cmd := exec.Command("nvidia-smi", "--query-compute-apps=gpu_uuid,pid,used_memory,name", "--format=csv,noheader,nounits")
+
+	output, err := cmd.Output()
+	if err != nil {
+		// This is OK - might just mean no processes running
 		return []map[string]interface{}{}, nil
 	}
 
 	var allProcesses []map[string]interface{}
 	gpuProcessCounts := make(map[string]map[string]int)
 
-	for i := 0; i < count; i++ {
+	// Initialize process counts
+	for i := 0; i < m.gpuCount; i++ {
 		gpuID := fmt.Sprintf("%d", i)
-		device, ret := nvml.DeviceGetHandleByIndex(i)
-		if ret != nvml.SUCCESS {
-			continue
-		}
-
-		uuid, ret := device.GetUUID()
-		if ret != nvml.SUCCESS {
-			continue
-		}
-
 		gpuProcessCounts[gpuID] = map[string]int{"compute": 0, "graphics": 0}
+	}
 
-		// Get compute processes
-		procs, ret := device.GetComputeRunningProcesses()
-		if ret == nvml.SUCCESS {
-			gpuProcessCounts[gpuID]["compute"] = len(procs)
-
-			for _, proc := range procs {
-				procName := getProcessName(int(proc.Pid))
-				procInfo := map[string]interface{}{
-					"pid":      fmt.Sprintf("%d", proc.Pid),
-					"name":     procName,
-					"gpu_uuid": uuid,
-					"gpu_id":   gpuID,
-					"memory":   float64(proc.UsedGpuMemory) / (1024 * 1024), // MB
-				"type":     "compute",
-				}
-
-				// Get additional process information
-				if p, err := process.NewProcess(int32(proc.Pid)); err == nil {
-					// Get command line
-					if cmdline, err := p.Cmdline(); err == nil {
-						procInfo["command"] = cmdline
-					}
-
-					// Get CPU utilization
-					if cpuPercent, err := p.CPUPercent(); err == nil {
-						procInfo["cpu_percent"] = cpuPercent
-					}
-				}
-
-				// Try to get GPU utilization (NVML may not provide per-process util on all GPUs)
-				// Note: GetProcessUtilization is not available in all NVML versions
-				// We'll track this via SM utilization if available
-				procInfo["gpu_percent"] = 0.0 // Default, will be updated if available
-
-				allProcesses = append(allProcesses, procInfo)
+	// Parse CSV output
+	reader := csv.NewReader(strings.NewReader(string(output)))
+	records, err := reader.ReadAll()
+	if err == nil {
+		for _, record := range records {
+			if len(record) < 4 {
+				continue
 			}
-		}
 
-		// Get graphics processes
-		graphicsProcs, ret := device.GetGraphicsRunningProcesses()
-		if ret == nvml.SUCCESS {
-			gpuProcessCounts[gpuID]["graphics"] = len(graphicsProcs)
+			uuid := strings.TrimSpace(record[0])
+			pidStr := strings.TrimSpace(record[1])
+			memStr := strings.TrimSpace(record[2])
+			procName := strings.TrimSpace(record[3])
 
-		for _, proc := range graphicsProcs {
-			procName := getProcessName(int(proc.Pid))
+			pid, err := strconv.Atoi(pidStr)
+			if err != nil {
+				continue
+			}
+
+			memory := 0.0
+			if memStr != "[N/A]" && memStr != "N/A" && memStr != "" {
+				if mem, err := strconv.ParseFloat(memStr, 64); err == nil {
+					memory = mem
+				}
+			}
+
+			// Find GPU ID from UUID
+			gpuID := ""
+			m.mu.RLock()
+			for id, data := range m.gpuData {
+				if gpuData, ok := data.(map[string]interface{}); ok {
+					if gpuUUID, ok := gpuData["uuid"].(string); ok && gpuUUID == uuid {
+						gpuID = id
+						break
+					}
+				}
+			}
+			m.mu.RUnlock()
+
+			if gpuID == "" {
+				continue
+			}
+
 			procInfo := map[string]interface{}{
-				"pid":      fmt.Sprintf("%d", proc.Pid),
+				"pid":      fmt.Sprintf("%d", pid),
 				"name":     procName,
 				"gpu_uuid": uuid,
 				"gpu_id":   gpuID,
-				"memory":   float64(proc.UsedGpuMemory) / (1024 * 1024), // MB
-				"type":     "graphics",
+				"memory":   memory,
+				"type":     "compute",
 			}
 
 			// Get additional process information
-			if p, err := process.NewProcess(int32(proc.Pid)); err == nil {
-				// Get command line
+			if p, err := process.NewProcess(int32(pid)); err == nil {
 				if cmdline, err := p.Cmdline(); err == nil {
 					procInfo["command"] = cmdline
 				}
-
-				// Get CPU utilization
 				if cpuPercent, err := p.CPUPercent(); err == nil {
 					procInfo["cpu_percent"] = cpuPercent
 				}
 			}
 
-			// Try to get GPU utilization (NVML may not provide per-process util on all GPUs)
-			// Note: GetProcessUtilization is not available in all NVML versions
-			// We'll track this via SM utilization if available
-			procInfo["gpu_percent"] = 0.0 // Default, will be updated if available
+			procInfo["gpu_percent"] = 0.0 // nvidia-smi doesn't provide per-process GPU util
 
 			allProcesses = append(allProcesses, procInfo)
-		}
+			gpuProcessCounts[gpuID]["compute"]++
 		}
 	}
 
@@ -277,89 +297,10 @@ func (m *GPUMonitor) GetProcesses() ([]map[string]interface{}, error) {
 	return allProcesses, nil
 }
 
-// Shutdown shuts down NVML and analytics
+// Shutdown shuts down the monitor and analytics
 func (m *GPUMonitor) Shutdown() {
-	// Stop heartbeat client
 	if m.heartbeatClient != nil {
 		m.heartbeatClient.Stop()
 	}
-
-	if m.initialized {
-		if ret := nvml.Shutdown(); ret != nvml.SUCCESS {
-			log.Printf("Failed to shutdown NVML: %v", nvml.ErrorString(ret))
-		} else {
-			log.Println("NVML shutdown")
-		}
-		m.initialized = false
-	}
-}
-
-// getProcessName extracts readable process name from PID
-func getProcessName(pid int) string {
-	proc, err := process.NewProcess(int32(pid))
-	if err != nil {
-		return fmt.Sprintf("PID:%d", pid)
-	}
-
-	// Try to get process name
-	name, err := proc.Name()
-	if err == nil && name != "" && name != "python" && name != "python3" && name != "sh" && name != "bash" {
-		return name
-	}
-
-	// Try to get cmdline for better name extraction
-	cmdline, err := proc.Cmdline()
-	if err == nil && cmdline != "" {
-		// Simple parsing - get the last part of the first meaningful argument
-		parts := splitCmdline(cmdline)
-		for _, part := range parts {
-			if part == "" || part[0] == '-' {
-				continue
-			}
-			if part == "python" || part == "python3" || part == "node" || part == "java" {
-				continue
-			}
-			// Extract filename from path
-			if idx := lastIndex(part, '/'); idx >= 0 {
-				part = part[idx+1:]
-			}
-			if idx := lastIndex(part, '\\'); idx >= 0 {
-				part = part[idx+1:]
-			}
-			if part != "" {
-				return part
-			}
-		}
-	}
-
-	return fmt.Sprintf("PID:%d", pid)
-}
-
-func splitCmdline(cmdline string) []string {
-	// Simple split by space - good enough for most cases
-	var parts []string
-	current := ""
-	for _, c := range cmdline {
-		if c == ' ' {
-			if current != "" {
-				parts = append(parts, current)
-				current = ""
-			}
-		} else {
-			current += string(c)
-		}
-	}
-	if current != "" {
-		parts = append(parts, current)
-	}
-	return parts
-}
-
-func lastIndex(s string, c rune) int {
-	for i := len(s) - 1; i >= 0; i-- {
-		if rune(s[i]) == c {
-			return i
-		}
-	}
-	return -1
+	log.Println("GPU Monitor (nvidia-smi) shutdown")
 }

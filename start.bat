@@ -49,26 +49,28 @@ REM ================================================
 REM Build Web UI
 REM ================================================
 :build_webui
-call :info "Building Web UI version..."
+call :info "Building Web UI version (with nvidia-smi GPU monitoring)..."
 go build -ldflags="-s -w" -o gpu-pro.exe .
 if %errorlevel% neq 0 (
     call :error "Web UI build failed"
     exit /b 1
 )
 call :success "Web UI build successful: gpu-pro.exe"
+call :info "Note: Uses nvidia-smi for GPU monitoring (requires NVIDIA drivers)"
 goto :eof
 
 REM ================================================
 REM Build Terminal UI
 REM ================================================
 :build_tui
-call :info "Building Terminal UI version..."
+call :info "Building Terminal UI version (with nvidia-smi GPU monitoring)..."
 go build -ldflags="-s -w" -o gpu-pro-cli.exe ./cmd/gpu-pro-cli
 if %errorlevel% neq 0 (
     call :error "Terminal UI build failed"
     exit /b 1
 )
 call :success "Terminal UI build successful: gpu-pro-cli.exe"
+call :info "Note: Uses nvidia-smi for GPU monitoring (requires NVIDIA drivers)"
 goto :eof
 
 REM ================================================
