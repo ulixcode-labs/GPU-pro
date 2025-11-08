@@ -889,6 +889,111 @@ const chartConfigs = {
             }
         }
     },
+    mfu: {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                {
+                    label: 'MFU (Model FLOPs Utilization)',
+                    data: [],
+                    borderColor: '#10b981',
+                    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                    borderWidth: 3,
+                    tension: 0.4,
+                    fill: true,
+                    pointRadius: 0,
+                    pointHitRadius: 10,
+                    pointBackgroundColor: '#10b981',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2
+                },
+                {
+                    label: 'Target Utilization (80%)',
+                    data: [],
+                    borderColor: 'rgba(250, 112, 154, 0.5)',
+                    backgroundColor: 'transparent',
+                    borderWidth: 1,
+                    borderDash: [5, 5],
+                    pointRadius: 0,
+                    fill: false
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                intersect: false,
+                mode: 'index'
+            },
+            layout: {
+                padding: { left: 0, right: 10, top: 10, bottom: 15 }
+            },
+            scales: {
+                x: {
+                    display: true,
+                    grid: {
+                        display: false,
+                        drawBorder: false
+                    },
+                    ticks: {
+                        color: 'rgba(255, 255, 255, 0.55)',
+                        font: { size: 12 },
+                        maxRotation: 0,
+                        autoSkip: true,
+                        maxTicksLimit: 6
+                    }
+                },
+                y: {
+                    min: 0,
+                    max: 100,
+                    grid: {
+                        color: 'rgba(255, 255, 255, 0.12)',
+                        borderDash: [4, 4],
+                        drawBorder: false
+                    },
+                    ticks: {
+                        stepSize: 20,
+                        color: 'rgba(255, 255, 255, 0.65)',
+                        font: { size: 11 },
+                        padding: 8,
+                        callback: function(value) { return value + '%'; }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                    titleColor: '#ffffff',
+                    bodyColor: '#ffffff',
+                    borderColor: '#10b981',
+                    borderWidth: 2,
+                    cornerRadius: 12,
+                    displayColors: true,
+                    padding: 12,
+                    titleFont: { size: 14, weight: 'bold' },
+                    bodyFont: { size: 13 },
+                    callbacks: {
+                        title: function(context) {
+                            return 'MFU (Model FLOPs Utilization)';
+                        },
+                        label: function(context) {
+                            const label = context.dataset.label || '';
+                            const value = context.parsed.y;
+                            if (label.includes('Target')) {
+                                return `${label}: ${value}%`;
+                            }
+                            return `${label}: ${value.toFixed(1)}%`;
+                        }
+                    }
+                }
+            }
+        }
+    },
     appclocks: {
         type: 'line',
         data: {
@@ -1044,7 +1149,8 @@ function initGPUData(gpuId) {
         clocks: { labels: [], graphicsData: [], smData: [], memoryData: [] },
         efficiency: { labels: [], data: [] },
         pcie: { labels: [], dataRX: [], dataTX: [] },
-        appclocks: { labels: [], dataGr: [], dataMem: [], dataSM: [], dataVideo: [] }
+        appclocks: { labels: [], dataGr: [], dataMem: [], dataSM: [], dataVideo: [] },
+        mfu: { labels: [], data: [], thresholdData: [] }
     };
 }
 
@@ -1141,6 +1247,8 @@ function updateChart(gpuId, chartType, value, value2, value3, value4) {
         data.dangerData.push(85);  // Danger at 85°C
     } else if (chartType === 'memory') {
         data.thresholdData.push(90); // High usage at 90%
+    } else if (chartType === 'mfu') {
+        data.thresholdData.push(80); // Target MFU at 80%
     }
 
     // Calculate max points based on time range (0.5s update interval)

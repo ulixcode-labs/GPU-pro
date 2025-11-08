@@ -656,6 +656,31 @@ function createGPUCard(gpuId, gpuInfo) {
                     <canvas id="chart-efficiency-${gpuId}"></canvas>
                 </div>
 
+                ${hasMetric(gpuInfo, 'mfu') && gpuInfo.mfu > 0 && gpuInfo.peak_tflops > 0 ? `
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <div class="chart-title">MFU (Model FLOPs Utilization) History</div>
+                        <div class="chart-stats">
+                            <div class="chart-stat">
+                                <span class="chart-stat-label">Current</span>
+                                <span class="chart-stat-value current" id="stat-mfu-current-${gpuId}">0%</span>
+                            </div>
+                            <div class="chart-stat">
+                                <span class="chart-stat-label">Min</span>
+                                <span class="chart-stat-value min" id="stat-mfu-min-${gpuId}">0%</span>
+                            </div>
+                            <div class="chart-stat">
+                                <span class="chart-stat-label">Max</span>
+                                <span class="chart-stat-value max" id="stat-mfu-max-${gpuId}">0%</span>
+                            </div>
+                            <div class="chart-stat">
+                                <span class="chart-stat-label">Avg</span>
+                                <span class="chart-stat-value avg" id="stat-mfu-avg-${gpuId}">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <canvas id="chart-mfu-${gpuId}"></canvas>
+                </div>` : ''}
 
                 ${hasMetric(gpuInfo, 'pcie_rx_throughput') || hasMetric(gpuInfo, 'pcie_tx_throughput') ? `
                 <div class="chart-container">
@@ -994,7 +1019,12 @@ function updateGPUDisplay(gpuId, gpuInfo, shouldUpdateDOM = true) {
     // Calculate and update power efficiency (utilization per watt)
     const efficiency = power_draw > 0 ? utilization / power_draw : 0;
     updateChart(gpuId, 'efficiency', efficiency);
-    
+
+    // Update MFU chart (only if metric is available and GPU is supported)
+    if (hasMetric(gpuInfo, 'mfu') && gpuInfo.mfu > 0 && gpuInfo.peak_tflops > 0) {
+        updateChart(gpuId, 'mfu', getMetricValue(gpuInfo, 'mfu', 0));
+    }
+
     // Update new charts (only if metrics are available)
     if (hasMetric(gpuInfo, 'pcie_rx_throughput') || hasMetric(gpuInfo, 'pcie_tx_throughput')) {
         updateChart(gpuId, 'pcie',

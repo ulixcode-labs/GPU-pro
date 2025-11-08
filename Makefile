@@ -7,7 +7,24 @@ BINARY_NAME=gpu-pro
 CLI_BINARY_NAME=gpu-pro-cli
 DIST_DIR=dist
 VERSION?=2.0.0
-BUILD_TIME=$(shell date -u '+%Y-%m-%d_%H:%M:%S')
+
+# Cross-platform build time detection
+ifeq ($(OS),Windows_NT)
+	BUILD_TIME=$(shell powershell -Command "Get-Date -Format 'yyyy-MM-dd_HH:mm:ss'")
+	BINARY_EXT=.exe
+	RM=del /Q
+	RMDIR=rmdir /S /Q
+	MKDIR=if not exist $(DIST_DIR) mkdir $(DIST_DIR)
+	EXEC_PREFIX=
+else
+	BUILD_TIME=$(shell date -u '+%Y-%m-%d_%H:%M:%S')
+	BINARY_EXT=
+	RM=rm -f
+	RMDIR=rm -rf
+	MKDIR=mkdir -p $(DIST_DIR)
+	EXEC_PREFIX=./
+endif
+
 LDFLAGS=-ldflags "-s -w -X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
 
 # Default target
@@ -47,14 +64,14 @@ help:
 # Build web UI for current platform
 build:
 	@echo "Building web UI for current platform..."
-	@go build $(LDFLAGS) -o $(BINARY_NAME) .
-	@echo "✓ Built: $(BINARY_NAME)"
+	@go build $(LDFLAGS) -o $(BINARY_NAME)$(BINARY_EXT) .
+	@echo "✓ Built: $(BINARY_NAME)$(BINARY_EXT)"
 
 # Build CLI/TUI for current platform
 build-cli:
 	@echo "Building CLI/TUI for current platform..."
-	@go build $(LDFLAGS) -o $(CLI_BINARY_NAME) ./cmd/gpu-pro-cli
-	@echo "✓ Built: $(CLI_BINARY_NAME)"
+	@go build $(LDFLAGS) -o $(CLI_BINARY_NAME)$(BINARY_EXT) ./cmd/gpu-pro-cli
+	@echo "✓ Built: $(CLI_BINARY_NAME)$(BINARY_EXT)"
 
 # ============================================================
 # Docker Builds (Production - Cross-platform with GPU)
@@ -81,7 +98,7 @@ build-all-docker:
 	@$(MAKE) docker-build-linux
 	@echo ""
 	@echo "Step 2/2: Building macOS binaries natively..."
-	@mkdir -p $(DIST_DIR)
+	@$(MKDIR)
 	@echo "Building macOS Intel binaries..."
 	@CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -tags=darwin $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-darwin-amd64 .
 	@CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -tags=darwin $(LDFLAGS) -o $(DIST_DIR)/$(CLI_BINARY_NAME)-darwin-amd64 ./cmd/gpu-pro-cli
@@ -107,19 +124,27 @@ build-all-docker:
 # Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
-	@rm -rf $(DIST_DIR)/
-	@rm -f $(BINARY_NAME) $(BINARY_NAME).exe $(CLI_BINARY_NAME) $(CLI_BINARY_NAME).exe
+ifeq ($(OS),Windows_NT)
+	@if exist $(DIST_DIR) $(RMDIR) $(DIST_DIR)
+	@if exist $(BINARY_NAME).exe $(RM) $(BINARY_NAME).exe
+	@if exist $(CLI_BINARY_NAME).exe $(RM) $(CLI_BINARY_NAME).exe
+	@if exist $(BINARY_NAME) $(RM) $(BINARY_NAME)
+	@if exist $(CLI_BINARY_NAME) $(RM) $(CLI_BINARY_NAME)
+else
+	@$(RMDIR) $(DIST_DIR)/
+	@$(RM) $(BINARY_NAME) $(BINARY_NAME).exe $(CLI_BINARY_NAME) $(CLI_BINARY_NAME).exe
+endif
 	@echo "✅ Done!"
 
 # Run web UI locally
 run: build
 	@echo "Starting GPU Pro (web UI)..."
-	@./$(BINARY_NAME)
+	@$(EXEC_PREFIX)$(BINARY_NAME)$(BINARY_EXT)
 
 # Run CLI/TUI locally
 run-cli: build-cli
 	@echo "Starting GPU Pro (CLI/TUI)..."
-	@./$(CLI_BINARY_NAME)
+	@$(EXEC_PREFIX)$(CLI_BINARY_NAME)$(BINARY_EXT)
 
 # Run tests
 test:

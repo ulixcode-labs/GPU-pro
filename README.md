@@ -122,6 +122,21 @@ make run
 make run-cli
 ```
 
+### Option 3: Windows Users
+```cmd
+# Build and run Web UI
+run.bat
+
+# Build and run Terminal UI
+run-cli.bat
+
+# OR using Make (if installed)
+make run
+make run-cli
+```
+
+> 📘 **Windows Users**: See [WINDOWS_SETUP.md](WINDOWS_SETUP.md) for detailed Windows setup instructions.
+
 
 ---
 
